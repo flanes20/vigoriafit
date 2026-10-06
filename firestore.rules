@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Funciones auxiliares ────────────────────────────────────────────────
+
+    /// true si el request viene de un usuario con sesión activa en Firebase Auth.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    /// true si el usuario autenticado ES el propietario del documento (uid == userId).
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    /// true si el documento de grupo existe y el usuario autenticado es el trainerId.
+    function isTrainerOf(groupId) {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/groups/$(groupId)).data.trainerId
+          == request.auth.uid;
+    }
+
+    // ── 1. Colección USUARIOS ────────────────────────────────────────────────
+    // Perfil público: visible para cualquier usuario autenticado (el entrenador
+    // necesita ver el nombre de sus alumnos). Solo el propietario puede escribir.
+    match /usuarios/{userId} {
+      allow read:             if isAuthenticated();
+      allow create, update:   if isOwner(userId);
+      allow delete:           if isOwner(userId);
+
+      // 1a. Perfil PRIVADO (datos médicos, peso, objetivo…)
+      // Solo el propio usuario puede leer o escribir sus datos sensibles.
+      match /perfil_privado/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ── 2. Colección GROUPS (grupos de entrenamiento) ────────────────────────
+    // El app usa la colección "groups" (inglés) en trainer_service.dart.
+    match /groups/{groupId} {
+      // Cualquier usuario autenticado puede leer el grupo (necesario para unirse
+      // con código y para que el alumno vea su rutina asignada).
+      allow read: if isAuthenticated();
+
+      // Solo el entrenador autenticado puede crear su propio grupo.
+      allow create: if isAuthenticated() &&
+        request.resource.data.trainerId == request.auth.uid;
+
+      // Solo el entrenador que creó el grupo puede actualizar/borrar.
+      allow update, delete: if isTrainerOf(groupId);
+
+      // 2a. Subcolección MEMBERS
+      match /members/{memberId} {
+        // El entrenador y cualquier miembro autenticado pueden leer la lista.
+        allow read: if isAuthenticated();
+
+        // Un alumno solo puede inscribirse con su propio UID.
+        allow create, update: if isAuthenticated() && request.auth.uid == memberId;
+
+        // El alumno puede salir, o el entrenador puede expulsar.
+        allow delete: if isAuthenticated() &&
+          (request.auth.uid == memberId || isTrainerOf(groupId));
+      }
+
+      // 2b. Subcolección COMPLETIONS (adherencia)
+      match /completions/{completionId} {
+        // El entrenador y todos los miembros autenticados pueden ver la adherencia.
+        allow read: if isAuthenticated();
+
+        // Un alumno solo puede registrar su propia finalización.
+        allow create: if isAuthenticated() &&
+          request.resource.data.userId == request.auth.uid;
+
+        // El alumno puede corregir su registro; el entrenador puede gestionarlo.
+        allow update, delete: if isAuthenticated() &&
+          (resource.data.userId == request.auth.uid || isTrainerOf(groupId));
+      }
+    }
+
+    // ── Regla de respaldo: denegar cualquier ruta no especificada ────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
