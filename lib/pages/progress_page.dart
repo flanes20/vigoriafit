@@ -172,7 +172,7 @@ class ProgressTab extends StatelessWidget {
             barWidth: 3,
             dotData: FlDotData(
               show: true,
-              getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+              getDotPainter: (spot, p1, p2, p3) => FlDotCirclePainter(
                 radius: 3.5,
                 color: AppColors.brand,
                 strokeWidth: 0,
@@ -255,6 +255,7 @@ class ProgressTab extends StatelessWidget {
 
   Future<void> _logWeight(BuildContext context, double current) async {
     double val = current.clamp(35, 200);
+    bool saving = false;
     await showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -298,11 +299,27 @@ class ProgressTab extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () {
-                      AppStore.instance.addWeight(val);
-                      Navigator.pop(context);
-                    },
-                    child: const Text('Guardar'),
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setSheet(() => saving = true);
+                            try {
+                              await AppStore.instance.addWeight(val);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (_) {
+                              if (context.mounted) {
+                                setSheet(() => saving = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'No se pudo guardar el peso. Revisa la conexión.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                    child: Text(saving ? 'Guardando…' : 'Guardar'),
                   ),
                 ),
               ],

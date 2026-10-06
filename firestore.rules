@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // users/{uid}: basic private account profile. No client-editable roles.
+    // users/{uid}/private/health_profile: health and body measurements.
+    // groups/{id}: trainerId is an Auth UID; legacy unowned groups are denied.
+    // groupInvites/{code}: only groupId, owner and timestamp; no health data.
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function trainer() { return signedIn() && request.auth.token.get('trainer', false) == true; }
+    function text(value, max) { return value is string && value.size() <= max; }
+    function validBasic(d) {
+      return d.keys().hasAll(['name','goal','level','daysPerWeek','hasGym','onboarded','createdAt','updatedAt'])
+        && d.keys().hasOnly(['name','goal','level','daysPerWeek','hasGym','onboarded','createdAt','updatedAt'])
+        && text(d.name,120) && d.goal is int && d.goal >= 0 && d.goal <= 3
+        && d.level is int && d.level >= 0 && d.level <= 2
+        && d.daysPerWeek is int && d.daysPerWeek >= 1 && d.daysPerWeek <= 7
+        && d.hasGym is bool && d.onboarded is bool
+        && d.createdAt is timestamp && d.updatedAt == request.time;
+    }
+    function validHealth(d) {
+      return d.keys().hasAll(['age','heightCm','weightKg','targetWeightKg','conditions','allergies','updatedAt'])
+        && d.keys().hasOnly(['age','heightCm','weightKg','targetWeightKg','conditions','allergies','updatedAt'])
+        && d.age is int && d.age >= 12 && d.age <= 120
+        && d.heightCm is number && d.heightCm >= 80 && d.heightCm <= 250
+        && d.weightKg is number && d.weightKg >= 20 && d.weightKg <= 500
+        && d.targetWeightKg is number && d.targetWeightKg >= 20 && d.targetWeightKg <= 500
+        && d.conditions is list && d.conditions.size() <= 9 && d.conditions.hasOnly([0,1,2,3,4,5,6,7,8])
+        && d.allergies is list && d.allergies.size() <= 6 && d.allergies.hasOnly([0,1,2,3,4,5])
+        && d.updatedAt == request.time;
+    }
+    match /users/{uid} {
+      allow get: if owner(uid);
+      allow list, delete: if false;
+      allow create: if owner(uid) && validBasic(request.resource.data) && request.resource.data.createdAt == request.time;
+      allow update: if owner(uid) && validBasic(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      match /private/{id} {
+        allow get: if owner(uid) && id == 'health_profile';
+        allow list, delete: if false;
+        allow create, update: if owner(uid) && id == 'health_profile'
+          && existsAfter(/databases/$(database)/documents/users/$(uid)) && validHealth(request.resource.data);
+      }
+    }
+    function groupOwner(gid) {
+      return trainer() && get(/databases/$(database)/documents/groups/$(gid)).data.trainerId == request.auth.uid;
+    }
+    function member(gid) {
+      return signedIn() && exists(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid));
+    }
+    function validGroup(d) {
+      return d.keys().hasAll(['trainerId','trainerName','code','createdAt','assignedWorkoutId','assignedWorkoutTitle'])
+        && d.keys().hasOnly(['trainerId','trainerName','code','createdAt','assignedWorkoutId','assignedWorkoutTitle','assignedAt'])
+        && text(d.trainerId,128) && text(d.trainerName,120)
+        && d.code is string && d.code.matches('^[0-9]{6}$') && d.createdAt is timestamp
+        && (d.assignedWorkoutId == null || text(d.assignedWorkoutId,100))
+        && (d.assignedWorkoutTitle == null || text(d.assignedWorkoutTitle,200));
+    }
+    match /groups/{gid} {
+      allow get: if groupOwner(gid) || member(gid);
+      allow list, delete: if false;
+      allow create: if trainer() && validGroup(request.resource.data)
+        && request.resource.data.trainerId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.assignedWorkoutId == null && request.resource.data.assignedWorkoutTitle == null
+        && !request.resource.data.keys().hasAny(['assignedAt']);
+      allow update: if groupOwner(gid) && validGroup(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['assignedWorkoutId','assignedWorkoutTitle','assignedAt'])
+        && request.resource.data.assignedAt == request.time;
+      match /members/{uid} {
+        allow get: if groupOwner(gid) || owner(uid);
+        allow list: if groupOwner(gid);
+        allow create: if owner(uid)
+          && request.resource.data.keys().hasAll(['name','joinedAt','inviteCode'])
+          && request.resource.data.keys().hasOnly(['name','joinedAt','inviteCode'])
+          && text(request.resource.data.name,120) && request.resource.data.joinedAt == request.time
+          && request.resource.data.inviteCode is string && request.resource.data.inviteCode.matches('^[0-9]{6}$')
+          && exists(/databases/$(database)/documents/groups/$(gid))
+          && get(/databases/$(database)/documents/groupInvites/$(request.resource.data.inviteCode)).data.groupId == gid;
+        allow update: if false;
+        allow delete: if owner(uid) || groupOwner(gid);
+      }
+      match /completions/{id} {
+        allow read: if groupOwner(gid) || (signedIn() && member(gid) && resource.data.userId == request.auth.uid);
+        allow create: if member(gid)
+          && request.resource.data.keys().hasAll(['userId','userName','workoutId','workoutTitle','completedAt'])
+          && request.resource.data.keys().hasOnly(['userId','userName','workoutId','workoutTitle','completedAt'])
+          && request.resource.data.userId == request.auth.uid
+          && text(request.resource.data.userName,120) && text(request.resource.data.workoutId,100)
+          && text(request.resource.data.workoutTitle,200) && request.resource.data.completedAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+    match /groupInvites/{code} {
+      allow get: if signedIn();
+      allow list, update, delete: if false;
+      allow create: if trainer() && code.matches('^[0-9]{6}$')
+        && request.resource.data.keys().hasAll(['groupId','trainerId','createdAt'])
+        && request.resource.data.keys().hasOnly(['groupId','trainerId','createdAt'])
+        && text(request.resource.data.groupId,128) && request.resource.data.trainerId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.trainerId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.code == code;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -32,9 +32,11 @@ class _TrainerPageState extends State<TrainerPage> {
     setState(() => _creating = true);
     try {
       final name = AppStore.instance.profile.name;
+      final uid = AppStore.instance.currentUid;
       final (groupId, code) = await TrainerService.createGroup(
         name.isEmpty ? 'Entrenador' : name,
       );
+      if (!mounted || AppStore.instance.currentUid != uid) return;
       await AppStore.instance.setMyGroup(groupId, code);
       await _refresh();
     } catch (e) {

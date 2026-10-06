@@ -36,27 +36,36 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
   Future<void> _join() async {
     final code = _codeCtrl.text.trim();
     if (code.length != 6) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('El código tiene 6 dígitos.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El código tiene 6 dígitos.')),
+      );
       return;
     }
     setState(() => _busy = true);
     try {
       final s = AppStore.instance;
-      final groupId = await TrainerService.joinGroup(code, s.localUserId, s.profile.name);
+      final uid = s.currentUid;
+      final groupId = await TrainerService.joinGroup(
+        code,
+        s.localUserId,
+        s.profile.name,
+      );
       if (groupId == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('No encontré ese código. Revísalo.')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No encontré ese código. Revísalo.')),
+          );
         }
         return;
       }
+      if (!mounted || s.currentUid != uid) return;
       await s.setMyGroup(groupId, code);
       await _loadGroup();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No pude unirme. Revisa tu internet.')));
+          const SnackBar(content: Text('No pude unirme. Revisa tu internet.')),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -64,8 +73,23 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
   }
 
   Future<void> _leave() async {
-    await AppStore.instance.leaveGroup();
-    setState(() => _group = null);
+    final s = AppStore.instance;
+    final groupId = s.groupId;
+    final uid = s.currentUid;
+    if (groupId == null) return;
+    try {
+      await TrainerService.leaveGroup(groupId, s.localUserId);
+      if (!mounted || s.currentUid != uid) return;
+      await s.leaveGroup();
+      if (mounted) setState(() => _group = null);
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo salir del grupo. Inténtalo nuevamente.'),
+          ),
+        );
+    }
   }
 
   @override
@@ -73,13 +97,12 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
     final inGroup = AppStore.instance.inGroup;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mi grupo',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 19)),
+        title: const Text(
+          'Mi grupo',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 19),
+        ),
       ),
-      body: SafeArea(
-        top: false,
-        child: inGroup ? _groupView() : _joinView(),
-      ),
+      body: SafeArea(top: false, child: inGroup ? _groupView() : _joinView()),
     );
   }
 
@@ -92,20 +115,35 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
           children: [
             const Icon(Icons.groups_rounded, size: 48, color: AppColors.brand),
             const SizedBox(height: 16),
-            Text('Únete al grupo de tu entrenador',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.ink)),
+            Text(
+              'Únete al grupo de tu entrenador',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.ink,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('Pídele el código de 6 dígitos e ingrésalo aquí.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13.5, color: AppColors.muted)),
+            Text(
+              'Pídele el código de 6 dígitos e ingrésalo aquí.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, color: AppColors.muted),
+            ),
             const SizedBox(height: 22),
             TextField(
               controller: _codeCtrl,
               keyboardType: TextInputType.number,
               maxLength: 6,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: 6),
-              decoration: const InputDecoration(counterText: '', hintText: '000000'),
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 6,
+              ),
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: '000000',
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -114,8 +152,13 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
                 onPressed: _busy ? null : _join,
                 child: _busy
                     ? const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Text('Unirme'),
               ),
             ),
@@ -143,26 +186,42 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
               const Icon(Icons.person_rounded, color: AppColors.brandDark),
               const SizedBox(width: 10),
               Expanded(
-                child: Text('Entrenador: ${trainerName ?? '—'}',
-                    style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.brandDark)),
+                child: Text(
+                  'Entrenador: ${trainerName ?? '—'}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.brandDark,
+                  ),
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
-        Text('Rutina asignada',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.ink)),
+        Text(
+          'Rutina asignada',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: AppColors.ink,
+          ),
+        ),
         const SizedBox(height: 8),
         if (assignedId == null)
-          Text('Tu entrenador todavía no te asignó nada.',
-              style: TextStyle(fontSize: 13, color: AppColors.muted))
+          Text(
+            'Tu entrenador todavía no te asignó nada.',
+            style: TextStyle(fontSize: 13, color: AppColors.muted),
+          )
         else
           InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () {
               final w = Workouts.byId(assignedId);
               Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => WorkoutDetailPage(workout: w)));
+                MaterialPageRoute(
+                  builder: (_) => WorkoutDetailPage(workout: w),
+                ),
+              );
             },
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -173,11 +232,19 @@ class _JoinGroupPageState extends State<JoinGroupPage> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.fitness_center_rounded, color: AppColors.brand),
+                  const Icon(
+                    Icons.fitness_center_rounded,
+                    color: AppColors.brand,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(assignedTitle ?? '',
-                        style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.ink)),
+                    child: Text(
+                      assignedTitle ?? '',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.ink,
+                      ),
+                    ),
                   ),
                   Icon(Icons.chevron_right_rounded, color: AppColors.faint),
                 ],

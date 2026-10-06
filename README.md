@@ -10,11 +10,12 @@ Proyecto de Título — Ingeniería en Informática, INACAP.
 
 ## Cómo correrlo
 
-1. Instala Flutter y `flutter pub get`.
-2. Copia `lib/core/secrets.example.dart` a `lib/core/secrets.dart` y pon ahí
-   tu propia API key de Gemini (gratis en https://aistudio.google.com/apikey).
-   Sin ella, el coach sigue funcionando con su motor por reglas (offline).
-3. `flutter run` (Android) o `flutter build apk --release` para generar el APK.
+La instalación, el modelo de datos, las pruebas y los pendientes del entorno están en [la guía del Sprint 1](docs/SPRINT_1.md).
 
-Este proyecto usa Firebase (Cloud Firestore) para el rol de entrenador y
-grupos; `android/app/google-services.json` ya está incluido y configurado.
+1. Usar Flutter 3.41.9 / Dart 3.11.5 e instalar el SDK Android.
+2. Ejecutar `flutter pub get`.
+3. Copiar `lib/core/secrets.example.dart` a `lib/core/secrets.dart` si no existe. La clave puede quedar vacía para probar autenticación y perfiles.
+4. Ejecutar `flutter test --no-pub` y `flutter analyze --no-pub`.
+5. Con un Android conectado o emulador iniciado, ejecutar `flutter run`.
+
+La app utiliza Firebase Authentication para las cuentas y Firestore para perfiles y grupos. El proyecto configurado es **vigoria-fe224**. El acceso remoto, los proveedores habilitados y las reglas desplegadas deben comprobarse según la guía antes de considerar operativa la integración. Los registros diarios continúan siendo locales, separados por UID.

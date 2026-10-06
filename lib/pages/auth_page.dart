@@ -1,6 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 import '../core/theme.dart';
 import '../services/store.dart';
@@ -44,32 +42,10 @@ class _AuthPageState extends State<AuthPage> {
 
   Future<void> _google() async {
     setState(() => _busy = true);
-    try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        // El usuario cerró el selector de cuenta sin elegir ninguna.
-        setState(() => _busy = false);
-        return;
-      }
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      final userCred =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-      final user = userCred.user;
-      if (user == null || user.email == null) {
-        throw Exception('No pude obtener tu cuenta de Google.');
-      }
-      await AppStore.instance
-          .loginWithProvider(user.email!, user.displayName ?? googleUser.displayName ?? 'Usuario');
-      // Si no hubo error, el "gate" de main.dart cambia de pantalla solo.
-    } catch (e) {
-      _snack('No se pudo iniciar sesión con Google. Inténtalo de nuevo.');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    final error = await AppStore.instance.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) _snack(error);
   }
 
   void _snack(String m) =>
@@ -91,24 +67,33 @@ class _AuthPageState extends State<AuthPage> {
                   height: 82,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                        colors: [AppColors.brand, AppColors.brandDark]),
+                      colors: [AppColors.brand, AppColors.brandDark],
+                    ),
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  child:
-                      const Icon(Icons.bolt_rounded, color: Colors.white, size: 48),
+                  child: const Icon(
+                    Icons.bolt_rounded,
+                    color: Colors.white,
+                    size: 48,
+                  ),
                 ),
               ),
               const SizedBox(height: 18),
               Center(
-                child: Text('VigoriaFit',
-                    style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.ink)),
+                child: Text(
+                  'VigoriaFit',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.ink,
+                  ),
+                ),
               ),
               Center(
-                child: Text('Tu vida saludable, con IA',
-                    style: TextStyle(fontSize: 14, color: AppColors.muted)),
+                child: Text(
+                  'Tu vida saludable, con IA',
+                  style: TextStyle(fontSize: 14, color: AppColors.muted),
+                ),
               ),
               const SizedBox(height: 28),
 
@@ -156,9 +141,11 @@ class _AuthPageState extends State<AuthPage> {
                   labelText: 'Contraseña',
                   prefixIcon: const Icon(Icons.lock_rounded),
                   suffixIcon: IconButton(
-                    icon: Icon(_hide
-                        ? Icons.visibility_rounded
-                        : Icons.visibility_off_rounded),
+                    icon: Icon(
+                      _hide
+                          ? Icons.visibility_rounded
+                          : Icons.visibility_off_rounded,
+                    ),
                     onPressed: () => setState(() => _hide = !_hide),
                   ),
                 ),
@@ -173,7 +160,10 @@ class _AuthPageState extends State<AuthPage> {
                           width: 22,
                           height: 22,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2.4, color: Colors.white))
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
+                        )
                       : Text(_register ? 'Crear cuenta' : 'Entrar'),
                 ),
               ),
@@ -183,8 +173,10 @@ class _AuthPageState extends State<AuthPage> {
                   Expanded(child: Divider(color: AppColors.line)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('o',
-                        style: TextStyle(fontSize: 12, color: AppColors.faint)),
+                    child: Text(
+                      'o',
+                      style: TextStyle(fontSize: 12, color: AppColors.faint),
+                    ),
                   ),
                   Expanded(child: Divider(color: AppColors.line)),
                 ],
@@ -199,19 +191,23 @@ class _AuthPageState extends State<AuthPage> {
                     side: BorderSide(color: AppColors.line),
                     foregroundColor: AppColors.ink,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15)),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
                   ),
                   icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
-                  label: const Text('Continuar con Google',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  label: const Text(
+                    'Continuar con Google',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
               const SizedBox(height: 18),
               Center(
                 child: Text(
-                    'Tus datos se guardan en tu teléfono, de forma segura.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5, color: AppColors.faint)),
+                  'Tu cuenta se almacena en Firebase. Los registros del día se guardan localmente en tu teléfono.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11.5, color: AppColors.faint),
+                ),
               ),
             ],
           ),
@@ -234,11 +230,14 @@ class _AuthPageState extends State<AuthPage> {
             borderRadius: BorderRadius.circular(11),
             border: active ? Border.all(color: AppColors.line) : null,
           ),
-          child: Text(label,
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
-                  color: active ? AppColors.ink : AppColors.muted)),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13.5,
+              color: active ? AppColors.ink : AppColors.muted,
+            ),
+          ),
         ),
       ),
     );

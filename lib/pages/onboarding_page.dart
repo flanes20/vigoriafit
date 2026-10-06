@@ -67,7 +67,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _profile.name = _name.text.trim();
     if (_profile.targetWeightKg == 0)
       _profile.targetWeightKg = _profile.weightKg;
-    await AppStore.instance.completeOnboarding(_profile);
+    try {
+      await AppStore.instance.completeOnboarding(_profile);
+    } catch (_) {
+      if (mounted)
+        _snack(
+          'No se pudo guardar el perfil. Revisa la conexión e inténtalo nuevamente.',
+        );
+    }
     // El "gate" de main.dart cambia a RootPage automáticamente.
   }
 

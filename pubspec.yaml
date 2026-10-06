@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.6.2+15
 
 environment:
-  sdk: ^3.12.0
+  sdk: ^3.11.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -41,7 +41,6 @@ dependencies:
   uuid: ^4.5.1                 # ids únicos
   google_generative_ai: ^0.4.6 # Coach IA (Google Gemini)
   image_picker: ^1.1.2         # cámara/galería para el escáner de comida
-  crypto: ^3.0.6               # hash de contraseñas (login local)
   flutter_local_notifications: ^18.0.1 # recordatorios (entrenar / agua)
   timezone: ^0.9.4             # zona horaria para programar recordatorios
   geolocator: ^13.0.2          # ubicación del usuario (gyms/tiendas cercanas)

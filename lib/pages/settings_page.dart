@@ -39,10 +39,23 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _save() async {
     _p.name = _name.text.trim().isEmpty ? _p.name : _name.text.trim();
-    await AppStore.instance.saveProfile(_p);
+    try {
+      await AppStore.instance.saveProfile(_p);
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo guardar. Revisa la conexión e inténtalo de nuevo.',
+            ),
+          ),
+        );
+      return;
+    }
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Guardado ✅')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Guardado ✅')));
       Navigator.of(context).pop();
     }
   }
@@ -61,8 +74,10 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _body(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ajustes',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+        title: const Text(
+          'Ajustes',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
@@ -98,8 +113,13 @@ class _SettingsPageState extends State<SettingsPage> {
             spacing: 8,
             runSpacing: 8,
             children: Goal.values
-                .map((g) => _chip('${g.emoji} ${g.label}', _p.goal == g,
-                    () => setState(() => _p.goal = g)))
+                .map(
+                  (g) => _chip(
+                    '${g.emoji} ${g.label}',
+                    _p.goal == g,
+                    () => setState(() => _p.goal = g),
+                  ),
+                )
                 .toList(),
           ),
           const SizedBox(height: 18),
@@ -110,8 +130,13 @@ class _SettingsPageState extends State<SettingsPage> {
             spacing: 8,
             runSpacing: 8,
             children: Level.values
-                .map((l) => _chip(l.label, _p.level == l,
-                    () => setState(() => _p.level = l)))
+                .map(
+                  (l) => _chip(
+                    l.label,
+                    _p.level == l,
+                    () => setState(() => _p.level = l),
+                  ),
+                )
                 .toList(),
           ),
           const SizedBox(height: 8),
@@ -120,46 +145,84 @@ class _SettingsPageState extends State<SettingsPage> {
             contentPadding: EdgeInsets.zero,
             value: _p.hasGym,
             activeColor: AppColors.brand,
-            title: Text('Tengo acceso a gimnasio',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, color: AppColors.ink)),
+            title: Text(
+              'Tengo acceso a gimnasio',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+            ),
             onChanged: (v) => setState(() => _p.hasGym = v),
           ),
-          _sliderTile('Días por semana', _p.daysPerWeek.toDouble(), 1, 7,
-              (v) => setState(() => _p.daysPerWeek = v.round()),
-              '${_p.daysPerWeek}'),
+          _sliderTile(
+            'Días por semana',
+            _p.daysPerWeek.toDouble(),
+            1,
+            7,
+            (v) => setState(() => _p.daysPerWeek = v.round()),
+            '${_p.daysPerWeek}',
+          ),
 
           const SizedBox(height: 26),
           _sub('Tu cuerpo'),
           const SizedBox(height: 8),
-          _sliderTile('Edad', _p.age.toDouble(), 12, 90,
-              (v) => setState(() => _p.age = v.round()), '${_p.age} años'),
-          _sliderTile('Estatura', _p.heightCm, 130, 220,
-              (v) => setState(() => _p.heightCm = v), '${_p.heightCm.round()} cm'),
-          _sliderTile('Peso actual', _p.weightKg, 35, 200,
-              (v) => setState(() => _p.weightKg = v), '${_p.weightKg.round()} kg'),
-          _sliderTile('Peso meta', _p.targetWeightKg, 35, 200,
-              (v) => setState(() => _p.targetWeightKg = v),
-              '${_p.targetWeightKg.round()} kg'),
+          _sliderTile(
+            'Edad',
+            _p.age.toDouble(),
+            12,
+            90,
+            (v) => setState(() => _p.age = v.round()),
+            '${_p.age} años',
+          ),
+          _sliderTile(
+            'Estatura',
+            _p.heightCm,
+            130,
+            220,
+            (v) => setState(() => _p.heightCm = v),
+            '${_p.heightCm.round()} cm',
+          ),
+          _sliderTile(
+            'Peso actual',
+            _p.weightKg,
+            35,
+            200,
+            (v) => setState(() => _p.weightKg = v),
+            '${_p.weightKg.round()} kg',
+          ),
+          _sliderTile(
+            'Peso meta',
+            _p.targetWeightKg,
+            35,
+            200,
+            (v) => setState(() => _p.targetWeightKg = v),
+            '${_p.targetWeightKg.round()} kg',
+          ),
 
           const SizedBox(height: 26),
           _sub('Condiciones de salud'),
           const SizedBox(height: 4),
-          Text('Ajusta comidas, suplementos y ejercicios para que sean seguros.',
-              style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          Text(
+            'Ajusta comidas, suplementos y ejercicios para que sean seguros.',
+            style: TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: HealthCondition.values.map((c) {
               final selected = _p.conditions.contains(c);
-              return _chip(c.label, selected, () => setState(() {
-                    if (selected) {
-                      _p.conditions.remove(c);
-                    } else {
-                      _p.conditions.add(c);
-                    }
-                  }));
+              return _chip(
+                c.label,
+                selected,
+                () => setState(() {
+                  if (selected) {
+                    _p.conditions.remove(c);
+                  } else {
+                    _p.conditions.add(c);
+                  }
+                }),
+              );
             }).toList(),
           ),
           const SizedBox(height: 18),
@@ -170,13 +233,17 @@ class _SettingsPageState extends State<SettingsPage> {
             runSpacing: 8,
             children: Allergy.values.map((a) {
               final selected = _p.allergies.contains(a);
-              return _chip(a.label, selected, () => setState(() {
-                    if (selected) {
-                      _p.allergies.remove(a);
-                    } else {
-                      _p.allergies.add(a);
-                    }
-                  }));
+              return _chip(
+                a.label,
+                selected,
+                () => setState(() {
+                  if (selected) {
+                    _p.allergies.remove(a);
+                  } else {
+                    _p.allergies.add(a);
+                  }
+                }),
+              );
             }).toList(),
           ),
 
@@ -199,10 +266,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                      'El Coach usa IA real (Google Gemini). Sus consejos son '
-                      'orientativos y no reemplazan a un profesional de la salud.',
-                      style: TextStyle(
-                          fontSize: 12, color: AppColors.ink, height: 1.35)),
+                    'El Coach usa IA real (Google Gemini). Sus consejos son '
+                    'orientativos y no reemplazan a un profesional de la salud.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.ink,
+                      height: 1.35,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -210,15 +281,18 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 10),
           Center(
             child: Text(
-                'Ilustraciones de ejercicios: wger.de / Everkinetic (CC BY-SA)',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10.5, color: AppColors.faint)),
+              'Ilustraciones de ejercicios: wger.de / Everkinetic (CC BY-SA)',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10.5, color: AppColors.faint),
+            ),
           ),
           const SizedBox(height: 20),
           if (AppStore.instance.currentEmail != null)
             Center(
-              child: Text('Sesión: ${AppStore.instance.currentEmail}',
-                  style: TextStyle(fontSize: 12, color: AppColors.faint)),
+              child: Text(
+                'Sesión: ${AppStore.instance.currentEmail}',
+                style: TextStyle(fontSize: 12, color: AppColors.faint),
+              ),
             ),
           const SizedBox(height: 10),
           TextButton.icon(
@@ -254,18 +328,29 @@ class _SettingsPageState extends State<SettingsPage> {
                 contentPadding: EdgeInsets.zero,
                 value: s.workoutReminderOn,
                 activeColor: AppColors.brand,
-                title: Text('Recordar entrenar',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600, color: AppColors.ink)),
-                subtitle: Text('Todos los días a las ${time.format(context)} · toca para cambiar la hora',
-                    style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                title: Text(
+                  'Recordar entrenar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink,
+                  ),
+                ),
+                subtitle: Text(
+                  'Todos los días a las ${time.format(context)} · toca para cambiar la hora',
+                  style: TextStyle(fontSize: 12, color: AppColors.muted),
+                ),
                 onChanged: (v) async {
                   if (v) {
                     final ok = await Notifications.requestPermission();
                     if (!ok) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                            content: Text('Activa las notificaciones en Ajustes del sistema.')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Activa las notificaciones en Ajustes del sistema.',
+                            ),
+                          ),
+                        );
                       }
                       return;
                     }
@@ -275,23 +360,28 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () async {
-                    final picked = await showTimePicker(
-                        context: context, initialTime: time);
-                    if (picked != null) {
-                      // Mantiene el estado activado/desactivado actual: solo
-                      // cambia la hora, no fuerza a encender el recordatorio.
-                      await s.setWorkoutReminder(s.workoutReminderOn,
-                          hour: picked.hour, minute: picked.minute);
-                    }
-                  },
-                  icon: const Icon(Icons.schedule_rounded, size: 16),
-                  label: const Text('Cambiar hora'),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.brand),
-                ),
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: time,
+                  );
+                  if (picked != null) {
+                    // Mantiene el estado activado/desactivado actual: solo
+                    // cambia la hora, no fuerza a encender el recordatorio.
+                    await s.setWorkoutReminder(
+                      s.workoutReminderOn,
+                      hour: picked.hour,
+                      minute: picked.minute,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.schedule_rounded, size: 16),
+                label: const Text('Cambiar hora'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.brand),
               ),
+            ),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -304,18 +394,29 @@ class _SettingsPageState extends State<SettingsPage> {
                 contentPadding: EdgeInsets.zero,
                 value: s.waterReminderOn,
                 activeColor: AppColors.brand,
-                title: Text('Recordar tomar agua',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600, color: AppColors.ink)),
-                subtitle: Text('3 avisos al día (11:00, 15:30, 19:00)',
-                    style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                title: Text(
+                  'Recordar tomar agua',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink,
+                  ),
+                ),
+                subtitle: Text(
+                  '3 avisos al día (11:00, 15:30, 19:00)',
+                  style: TextStyle(fontSize: 12, color: AppColors.muted),
+                ),
                 onChanged: (v) async {
                   if (v) {
                     final ok = await Notifications.requestPermission();
                     if (!ok) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                            content: Text('Activa las notificaciones en Ajustes del sistema.')));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Activa las notificaciones en Ajustes del sistema.',
+                            ),
+                          ),
+                        );
                       }
                       return;
                     }
@@ -344,25 +445,42 @@ class _SettingsPageState extends State<SettingsPage> {
               contentPadding: EdgeInsets.zero,
               value: s.isTrainer,
               activeColor: AppColors.brand,
-              title: Text('Soy entrenador',
-                  style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.ink)),
-              subtitle: Text('Crea un grupo y asigna rutinas a tus alumnos.',
-                  style: TextStyle(fontSize: 12, color: AppColors.muted)),
-              onChanged: (v) => s.setIsTrainer(v),
+              title: Text(
+                'Soy entrenador',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.ink,
+                ),
+              ),
+              subtitle: Text(
+                'El acceso de entrenador requiere habilitación del administrador.',
+                style: TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+              onChanged: null,
             ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => s.isTrainer ? const TrainerPage() : const JoinGroupPage())),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => s.isTrainer
+                        ? const TrainerPage()
+                        : const JoinGroupPage(),
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   side: const BorderSide(color: AppColors.brand),
                   foregroundColor: AppColors.brand,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
-                icon: Icon(s.isTrainer ? Icons.groups_rounded : Icons.group_add_rounded, size: 18),
+                icon: Icon(
+                  s.isTrainer ? Icons.groups_rounded : Icons.group_add_rounded,
+                  size: 18,
+                ),
                 label: Text(s.isTrainer ? 'Panel de entrenador' : 'Mi grupo'),
               ),
             ),
@@ -397,11 +515,14 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: active ? AppColors.brand : Colors.transparent,
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Text(_themeLabels[m]!,
-                        style: TextStyle(
-                            color: active ? Colors.white : AppColors.muted,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13.5)),
+                    child: Text(
+                      _themeLabels[m]!,
+                      style: TextStyle(
+                        color: active ? Colors.white : AppColors.muted,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -421,32 +542,50 @@ class _SettingsPageState extends State<SettingsPage> {
           color: selected ? AppColors.brandSoft : AppColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? AppColors.brand : AppColors.line,
-              width: selected ? 1.4 : 1),
+            color: selected ? AppColors.brand : AppColors.line,
+            width: selected ? 1.4 : 1,
+          ),
         ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: selected ? AppColors.brandDark : AppColors.ink)),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? AppColors.brandDark : AppColors.ink,
+          ),
+        ),
       ),
     );
   }
 
-  Widget _sliderTile(String label, double value, double min, double max,
-      ValueChanged<double> onChanged, String display) {
+  Widget _sliderTile(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+    String display,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
         children: [
           Expanded(
-            child: Text(label,
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, color: AppColors.ink)),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+            ),
           ),
-          Text(display,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w800, color: AppColors.brand)),
+          Text(
+            display,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppColors.brand,
+            ),
+          ),
           SizedBox(
             width: 160,
             child: Slider(
@@ -463,11 +602,21 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _label(String t) => Text(t,
-      style: TextStyle(
-          fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.ink));
+  Widget _label(String t) => Text(
+    t,
+    style: TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.w800,
+      color: AppColors.ink,
+    ),
+  );
 
-  Widget _sub(String t) => Text(t,
-      style: TextStyle(
-          fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.muted));
+  Widget _sub(String t) => Text(
+    t,
+    style: TextStyle(
+      fontSize: 13.5,
+      fontWeight: FontWeight.w700,
+      color: AppColors.muted,
+    ),
+  );
 }

@@ -17,15 +17,17 @@ void main() async {
   try {
     await Firebase.initializeApp();
     await initializeDateFormatting('es', null);
-    await AppStore.instance.load();
     await Notifications.init();
+    await AppStore.instance.load();
   } catch (e, st) {
     startupError = e;
     startupStack = st;
   }
-  runApp(startupError != null
-      ? _StartupErrorApp(error: startupError, stack: startupStack)
-      : const VigoriaFitApp());
+  runApp(
+    startupError != null
+        ? _StartupErrorApp(error: startupError, stack: startupStack)
+        : const VigoriaFitApp(),
+  );
 }
 
 /// Si algo falla al iniciar (Firebase, datos guardados, notificaciones),
@@ -49,17 +51,24 @@ class _StartupErrorApp extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('VigoriaFit no pudo iniciar',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800)),
+                  const Text(
+                    'VigoriaFit no pudo iniciar',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 14),
-                  SelectableText('$error',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  SelectableText(
+                    '$error',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
                   const SizedBox(height: 14),
-                  SelectableText('$stack',
-                      style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                  SelectableText(
+                    '$stack',
+                    style: const TextStyle(color: Colors.white38, fontSize: 10),
+                  ),
                 ],
               ),
             ),
@@ -79,6 +88,7 @@ class VigoriaFitApp extends StatelessWidget {
       listenable: AppStore.instance,
       builder: (context, _) {
         return MaterialApp(
+          key: ValueKey(AppStore.instance.currentUid),
           title: 'VigoriaFit',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
@@ -88,22 +98,59 @@ class VigoriaFitApp extends StatelessWidget {
             // La barra de navegación del sistema (abajo) y la de estado
             // (arriba) también deben seguir el tema, si no quedan negras
             // incluso en modo claro.
-            SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-              systemNavigationBarColor: AppColors.bg,
-              systemNavigationBarIconBrightness:
-                  AppColors.dark ? Brightness.light : Brightness.dark,
-              statusBarColor: Colors.transparent,
-              statusBarIconBrightness:
-                  AppColors.dark ? Brightness.light : Brightness.dark,
-            ));
+            SystemChrome.setSystemUIOverlayStyle(
+              SystemUiOverlayStyle(
+                systemNavigationBarColor: AppColors.bg,
+                systemNavigationBarIconBrightness: AppColors.dark
+                    ? Brightness.light
+                    : Brightness.dark,
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: AppColors.dark
+                    ? Brightness.light
+                    : Brightness.dark,
+              ),
+            );
             return child!;
           },
-          home: Builder(builder: (_) {
-            final s = AppStore.instance;
-            if (!s.authed) return const AuthPage();
-            if (!s.onboarded) return const OnboardingPage();
-            return const RootPage();
-          }),
+          home: Builder(
+            builder: (_) {
+              final s = AppStore.instance;
+              if (!s.loaded) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (s.sessionError != null) {
+                return Scaffold(
+                  body: SafeArea(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(s.sessionError!, textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              onPressed: s.retryProfile,
+                              child: const Text('Reintentar'),
+                            ),
+                            TextButton(
+                              onPressed: s.logout,
+                              child: const Text('Cerrar sesión'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              if (!s.authed) return const AuthPage();
+              if (!s.onboarded) return const OnboardingPage();
+              return const RootPage();
+            },
+          ),
         );
       },
     );
