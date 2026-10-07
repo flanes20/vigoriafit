@@ -1,7 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,29 +10,54 @@ import '../models/logs.dart';
 import '../models/profile.dart';
 import '../models/week_plan.dart';
 import 'notifications.dart';
+import 'auth_service.dart';
+import 'account_preferences.dart';
+import 'profile_repository.dart';
+import 'firebase_profile_repository.dart';
 
-/// Almacén central de VigoriaFit. Guarda el perfil, los registros diarios (agua y
-/// entrenamientos), el historial de peso y los ajustes en el dispositivo, y
-/// avisa a la UI cuando algo cambia.
+/// Perfil remoto por UID y registros locales separados por cuenta.
 class AppStore extends ChangeNotifier {
-  AppStore._();
-  static final AppStore instance = AppStore._();
+  AppStore({
+    required AccountAuth auth,
+    required ProfileRepository profiles,
+    Future<void> Function()? clearReminders,
+  }) : _auth = auth,
+       _profiles = profiles,
+       _clearReminders =
+           clearReminders ??
+           (() async {
+             await Notifications.cancelWorkout();
+             await Notifications.cancelWater();
+           });
+  static final AppStore instance = AppStore(
+    auth: FirebaseAccountAuth(),
+    profiles: FirebaseProfileRepository(),
+  );
+  final AccountAuth _auth;
+  final ProfileRepository _profiles;
+  final Future<void> Function() _clearReminders;
+  StreamSubscription<AccountIdentity?>? _authSubscription;
+  AccountIdentity? _account;
+  AccountPreferences? _accountPrefs;
+  Future<void> _transition = Future.value();
+  Future<void> _reminderTransition = Future.value();
+  int _epoch = 0;
+  bool _sessionInitialized = false;
+  String? _sessionError;
+  String? get sessionError => _sessionError;
+  String? get currentUid => _account?.uid;
 
   static const _kProfile = 'brio_profile_v1';
   static const _kOnboarded = 'brio_onboarded_v1';
   static const _kTheme = 'brio_theme_v1';
   static const _kLogs = 'brio_daylogs_v1';
   static const _kWeights = 'brio_weights_v1';
-  static const _kAccounts = 'brio_accounts_v1';
-  static const _kSession = 'brio_session_v1';
   static const _kWorkoutReminder = 'brio_reminder_workout_v1';
   static const _kWorkoutHour = 'brio_reminder_workout_hour_v1';
   static const _kWorkoutMinute = 'brio_reminder_workout_min_v1';
   static const _kWaterReminder = 'brio_reminder_water_v1';
   static const _kWeekPlan = 'brio_weekplan_v1';
   static const _kExerciseWeights = 'brio_exercise_weights_v1';
-  static const _kLocalUserId = 'brio_local_user_id_v1';
-  static const _kIsTrainer = 'brio_is_trainer_v1';
   static const _kGroupId = 'brio_group_id_v1';
   static const _kGroupCode = 'brio_group_code_v1';
 
@@ -41,8 +66,6 @@ class AppStore extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   final Map<String, DayLog> _logs = {};
   final List<WeightEntry> _weights = [];
-  Map<String, dynamic> _accounts = {}; // email -> {name, salt, hash, provider}
-  String? _sessionEmail;
   bool _workoutReminderOn = false;
   int _workoutHour = 18;
   int _workoutMinute = 0;
@@ -74,27 +97,93 @@ class AppStore extends ChangeNotifier {
   bool get inGroup => _groupId != null;
 
   // ── Sesión / autenticación ───────────────────────────────────────────────
-  bool get authed => _sessionEmail != null;
-  String? get currentEmail => _sessionEmail;
+  bool get authed => _account != null;
+  String? get currentEmail => _account?.email;
 
   Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
+    _authSubscription ??= _auth.changes.listen((user) {
+      unawaited(_acceptSession(user));
+    });
+    await _acceptSession(_auth.current);
+  }
+
+  Future<void> _acceptSession(AccountIdentity? user, {bool force = false}) {
+    if (!force && _sessionInitialized && user?.uid == _account?.uid)
+      return _transition;
+    _sessionInitialized = true;
+    final epoch = ++_epoch;
+    _account = user;
+    _accountPrefs = null;
+    _profile = Profile();
+    _onboarded = false;
+    _themeMode = ThemeMode.system;
+    _logs.clear();
+    _weights.clear();
+    _exerciseWeights.clear();
+    _weekPlan = null;
+    _groupId = null;
+    _groupCode = null;
+    _isTrainer = false;
+    _localUserId = user?.uid ?? '';
+    _workoutReminderOn = false;
+    _waterReminderOn = false;
+    _workoutHour = 18;
+    _workoutMinute = 0;
+    _loaded = false;
+    _sessionError = null;
+    notifyListeners();
+    return _transition = _restoreAccount(user, epoch);
+  }
+
+  Future<void> _restoreAccount(AccountIdentity? user, int epoch) async {
+    try {
+      await _updateReminders(cancelOnly: true);
+      if (epoch != _epoch) return;
+      if (user != null) {
+        final storage = await SharedPreferences.getInstance();
+        if (epoch != _epoch) return;
+        final p = AccountPreferences(storage, user.uid);
+        _accountPrefs = p;
+        _readAccountCache(p);
+        final remote = await _profiles.loadOrCreate(user);
+        if (epoch != _epoch) return;
+        _profile = remote.profile;
+        _onboarded = remote.onboarded;
+        _isTrainer = remote.trainer;
+        await p.setString(_kProfile, _profile.toJson());
+        await p.setBool(_kOnboarded, remote.onboarded);
+        if (epoch == _epoch) await _updateReminders();
+      }
+    } catch (_) {
+      if (epoch != _epoch) return;
+      _sessionError =
+          'No pudimos recuperar tu perfil. Revisa la conexión y vuelve a intentar.';
+    } finally {
+      if (epoch == _epoch) {
+        _loaded = true;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> retryProfile() => _acceptSession(_auth.current, force: true);
+
+  void _readAccountCache(AccountPreferences p) {
     final pj = p.getString(_kProfile);
     if (pj != null) _profile = Profile.fromJson(pj);
     _onboarded = p.getBool(_kOnboarded) ?? false;
     _themeMode = ThemeMode.values[(p.getInt(_kTheme) ?? 0).clamp(0, 2)];
     _logs
       ..clear()
-      ..addEntries((p.getStringList(_kLogs) ?? [])
-          .map(DayLog.fromJson)
-          .map((l) => MapEntry(l.dateKey, l)));
+      ..addEntries(
+        (p.getStringList(_kLogs) ?? [])
+            .map(DayLog.fromJson)
+            .map((l) => MapEntry(l.dateKey, l)),
+      );
     _weights
       ..clear()
       ..addAll((p.getStringList(_kWeights) ?? []).map(WeightEntry.fromJson));
     _weights.sort((a, b) => a.date.compareTo(b.date));
-    final aj = p.getString(_kAccounts);
-    _accounts = aj != null ? jsonDecode(aj) as Map<String, dynamic> : {};
-    _sessionEmail = p.getString(_kSession);
     _workoutReminderOn = p.getBool(_kWorkoutReminder) ?? false;
     _workoutHour = p.getInt(_kWorkoutHour) ?? 18;
     _workoutMinute = p.getInt(_kWorkoutMinute) ?? 0;
@@ -111,28 +200,23 @@ class AppStore extends ChangeNotifier {
             .toList();
       });
     }
-    _localUserId = p.getString(_kLocalUserId) ?? '';
-    if (_localUserId.isEmpty) {
-      _localUserId = _newLocalId();
-      await p.setString(_kLocalUserId, _localUserId);
-    }
-    _isTrainer = p.getBool(_kIsTrainer) ?? false;
     _groupId = p.getString(_kGroupId);
     _groupCode = p.getString(_kGroupCode);
-    _loaded = true;
-    notifyListeners();
   }
 
-  String _newLocalId() {
-    final r = Random.secure();
-    return List.generate(16, (_) => r.nextInt(16).toRadixString(16)).join();
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   // ── Rol entrenador / grupos ──────────────────────────────────────────────
-  Future<void> setIsTrainer(bool v) async {
-    _isTrainer = v;
-    notifyListeners();
-    await _prefs((p) => p.setBool(_kIsTrainer, v));
+  Future<void> setIsTrainer(bool value) async {
+    if (value != _isTrainer) {
+      throw StateError(
+        'El rol de entrenador debe ser habilitado por un administrador.',
+      );
+    }
   }
 
   Future<void> setMyGroup(String groupId, String code) async {
@@ -168,8 +252,12 @@ class AppStore extends ChangeNotifier {
     return list.last.kg;
   }
 
-  Future<void> logExerciseWeight(String exerciseName, double kg,
-      {int? sets, int? reps}) async {
+  Future<void> logExerciseWeight(
+    String exerciseName,
+    double kg, {
+    int? sets,
+    int? reps,
+  }) async {
     final list = _exerciseWeights.putIfAbsent(exerciseName, () => []);
     list.add(ExerciseWeightEntry(DateTime.now(), kg, sets: sets, reps: reps));
     if (list.length > 20) list.removeRange(0, list.length - 20);
@@ -180,8 +268,13 @@ class AppStore extends ChangeNotifier {
   /// Corrige un registro ya guardado (por si el usuario se equivocó al
   /// tipear). Se identifica por su fecha/hora exacta, que es única por
   /// registro.
-  Future<void> updateExerciseEntry(String exerciseName, DateTime date,
-      {required double kg, int? sets, int? reps}) async {
+  Future<void> updateExerciseEntry(
+    String exerciseName,
+    DateTime date, {
+    required double kg,
+    int? sets,
+    int? reps,
+  }) async {
     final list = _exerciseWeights[exerciseName];
     if (list == null) return;
     final i = list.indexWhere((e) => e.date == date);
@@ -200,8 +293,11 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> _persistExerciseWeights() async {
-    final encoded = jsonEncode(_exerciseWeights
-        .map((name, list) => MapEntry(name, list.map((e) => e.toMap()).toList())));
+    final encoded = jsonEncode(
+      _exerciseWeights.map(
+        (name, list) => MapEntry(name, list.map((e) => e.toMap()).toList()),
+      ),
+    );
     await _prefs((p) => p.setString(_kExerciseWeights, encoded));
   }
 
@@ -213,52 +309,71 @@ class AppStore extends ChangeNotifier {
     if (history == null || history.isEmpty) return null;
     if (history.length == 1) {
       return ExerciseSuggestion(
-          'Registra una vez más para que te sugiera cuánto subir. 💪', null);
+        'Registra una vez más para que te sugiera cuánto subir. 💪',
+        null,
+      );
     }
     final last = history.last.kg;
     final prev = history[history.length - 2].kg;
     final step = last >= 10 ? 2.5 : 1.0;
     if (last > prev) {
       return ExerciseSuggestion(
-          'Subiste a ${_fmtKg(last)} kg. Mantén ese peso una vez más antes de volver a subir.',
-          last);
+        'Subiste a ${_fmtKg(last)} kg. Mantén ese peso una vez más antes de volver a subir.',
+        last,
+      );
     }
     final next = last + step;
     return ExerciseSuggestion(
-        'Llevas ${_fmtKg(last)} kg. Prueba con ${_fmtKg(next)} kg la próxima vez. 📈',
-        next);
+      'Llevas ${_fmtKg(last)} kg. Prueba con ${_fmtKg(next)} kg la próxima vez. 📈',
+      next,
+    );
   }
 
   String _fmtKg(double kg) =>
       kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
 
   // ── Recordatorios ────────────────────────────────────────────────────────
+  Future<void> _updateReminders({bool cancelOnly = false}) {
+    final epoch = _epoch;
+    final workout = !cancelOnly && _workoutReminderOn;
+    final water = !cancelOnly && _waterReminderOn;
+    final hour = _workoutHour;
+    final minute = _workoutMinute;
+    // Serialize platform calls: a previous account cannot schedule after logout.
+    return _reminderTransition = _reminderTransition.catchError((_) {}).then((
+      _,
+    ) async {
+      if (epoch != _epoch) return;
+      await _clearReminders();
+      if (epoch != _epoch) return;
+      if (workout) await Notifications.scheduleWorkout(hour, minute);
+      if (epoch != _epoch) return;
+      if (water) await Notifications.scheduleWater();
+    });
+  }
+
   Future<void> setWorkoutReminder(bool on, {int? hour, int? minute}) async {
+    final epoch = _epoch;
     _workoutReminderOn = on;
     if (hour != null) _workoutHour = hour;
     if (minute != null) _workoutMinute = minute;
+    final savedHour = _workoutHour;
+    final savedMinute = _workoutMinute;
     notifyListeners();
     await _prefs((p) async {
       await p.setBool(_kWorkoutReminder, on);
-      await p.setInt(_kWorkoutHour, _workoutHour);
-      await p.setInt(_kWorkoutMinute, _workoutMinute);
+      await p.setInt(_kWorkoutHour, savedHour);
+      await p.setInt(_kWorkoutMinute, savedMinute);
     });
-    if (on) {
-      await Notifications.scheduleWorkout(_workoutHour, _workoutMinute);
-    } else {
-      await Notifications.cancelWorkout();
-    }
+    if (epoch == _epoch) await _updateReminders();
   }
 
   Future<void> setWaterReminder(bool on) async {
+    final epoch = _epoch;
     _waterReminderOn = on;
     notifyListeners();
     await _prefs((p) => p.setBool(_kWaterReminder, on));
-    if (on) {
-      await Notifications.scheduleWater();
-    } else {
-      await Notifications.cancelWater();
-    }
+    if (epoch == _epoch) await _updateReminders();
   }
 
   // ── Plan semanal (IA) ────────────────────────────────────────────────────
@@ -268,103 +383,81 @@ class AppStore extends ChangeNotifier {
     await _prefs((p) => p.setString(_kWeekPlan, plan.toJson()));
   }
 
-  String _hash(String password, String salt) =>
-      sha256.convert(utf8.encode('$salt::$password')).toString();
-
-  String _newSalt() {
-    final r = Random.secure();
-    return List.generate(16, (_) => r.nextInt(256).toRadixString(16))
-        .join();
-  }
-
-  bool _validEmail(String e) =>
-      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e.trim());
-
-  /// Registra una cuenta nueva. Devuelve null si todo ok, o un mensaje de error.
   Future<String?> register(String name, String email, String password) async {
-    email = email.trim().toLowerCase();
     if (name.trim().isEmpty) return 'Escribe tu nombre.';
-    if (!_validEmail(email)) return 'Ese correo no parece válido.';
-    if (password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
-    if (_accounts.containsKey(email)) return 'Ya existe una cuenta con ese correo.';
-    final salt = _newSalt();
-    _accounts[email] = {
-      'name': name.trim(),
-      'salt': salt,
-      'hash': _hash(password, salt),
-      'provider': 'email',
-    };
-    _sessionEmail = email;
-    _profile.name = name.trim();
-    notifyListeners();
-    await _prefs((p) async {
-      await p.setString(_kAccounts, jsonEncode(_accounts));
-      await p.setString(_kSession, email);
-      await p.setString(_kProfile, _profile.toJson());
-    });
-    return null;
-  }
-
-  /// Inicia sesión con correo/contraseña. Devuelve null si ok, o el error.
-  Future<String?> login(String email, String password) async {
-    email = email.trim().toLowerCase();
-    final acc = _accounts[email];
-    if (acc == null) return 'No hay ninguna cuenta con ese correo.';
-    if (acc['hash'] != _hash(password, acc['salt'])) {
-      return 'Contraseña incorrecta.';
+    try {
+      await _auth.register(name.trim(), email.trim(), password);
+      await _acceptSession(_auth.current);
+      return null;
+    } catch (error) {
+      return accountError(error);
     }
-    _sessionEmail = email;
-    notifyListeners();
-    await _prefs((p) => p.setString(_kSession, email));
-    return null;
   }
 
-  /// Inicia/registra sesión con un proveedor externo (ej. Google).
-  Future<void> loginWithProvider(String email, String name,
-      {String provider = 'google'}) async {
-    email = email.trim().toLowerCase();
-    _accounts[email] ??= {'name': name, 'provider': provider};
-    _sessionEmail = email;
-    if (_profile.name.isEmpty) _profile.name = name;
-    notifyListeners();
-    await _prefs((p) async {
-      await p.setString(_kAccounts, jsonEncode(_accounts));
-      await p.setString(_kSession, email);
-      await p.setString(_kProfile, _profile.toJson());
-    });
+  Future<String?> login(String email, String password) async {
+    try {
+      await _auth.signIn(email.trim(), password);
+      await _acceptSession(_auth.current);
+      return null;
+    } catch (error) {
+      return accountError(error);
+    }
+  }
+
+  Future<String?> loginWithGoogle() async {
+    try {
+      await _auth.signInWithGoogle();
+      await _acceptSession(_auth.current);
+      return null;
+    } catch (error) {
+      return accountError(error);
+    }
   }
 
   Future<void> logout() async {
-    _sessionEmail = null;
-    notifyListeners();
-    await _prefs((p) => p.remove(_kSession));
+    await _auth.signOut();
+    await _acceptSession(null);
   }
 
-  Future<void> _prefs(Future<void> Function(SharedPreferences p) fn) async {
-    final p = await SharedPreferences.getInstance();
+  Future<void> _prefs(Future<void> Function(AccountPreferences p) fn) async {
+    final p = _accountPrefs;
+    if (p == null || !authed) throw StateError('No hay una sesión lista.');
     await fn(p);
   }
 
   // ── Perfil / onboarding ──────────────────────────────────────────────────
   Future<void> completeOnboarding(Profile profile) async {
-    _profile = profile;
-    _onboarded = true;
-    // Primer registro de peso para arrancar el gráfico.
-    if (_weights.isEmpty) {
-      _weights.add(WeightEntry(DateTime.now(), profile.weightKg));
-    }
-    notifyListeners();
-    await _prefs((p) async {
-      await p.setString(_kProfile, profile.toJson());
-      await p.setBool(_kOnboarded, true);
-      await p.setStringList(_kWeights, _weights.map((e) => e.toJson()).toList());
-    });
+    await _saveRemoteProfile(profile, onboarded: true);
   }
 
   Future<void> saveProfile(Profile profile) async {
-    _profile = profile;
-    notifyListeners();
-    await _prefs((p) => p.setString(_kProfile, profile.toJson()));
+    await _saveRemoteProfile(profile, onboarded: _onboarded);
+  }
+
+  Future<void> _saveRemoteProfile(
+    Profile profile, {
+    required bool onboarded,
+  }) async {
+    final uid = currentUid;
+    final epoch = _epoch;
+    final cache = _accountPrefs;
+    if (uid == null || cache == null || !_loaded || _sessionError != null) {
+      throw StateError('No hay una sesión lista.');
+    }
+    final snapshot = profile.copy();
+    await _profiles.save(uid, snapshot, onboarded: onboarded);
+    if (epoch != _epoch)
+      throw StateError('La sesión cambió durante el guardado.');
+    _profile = snapshot;
+    _onboarded = onboarded;
+    if (_weights.isEmpty && onboarded) {
+      _weights.add(WeightEntry(DateTime.now(), snapshot.weightKg));
+    }
+    final weights = _weights.map((e) => e.toJson()).toList();
+    await cache.setString(_kProfile, snapshot.toJson());
+    await cache.setBool(_kOnboarded, onboarded);
+    await cache.setStringList(_kWeights, weights);
+    if (epoch == _epoch) notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -384,8 +477,10 @@ class AppStore extends ChangeNotifier {
   Future<void> _saveLog(DayLog log) async {
     _logs[log.dateKey] = log;
     notifyListeners();
-    await _prefs((p) =>
-        p.setStringList(_kLogs, _logs.values.map((e) => e.toJson()).toList()));
+    await _prefs(
+      (p) =>
+          p.setStringList(_kLogs, _logs.values.map((e) => e.toJson()).toList()),
+    );
   }
 
   Future<void> addWater([int delta = 1]) async {
@@ -425,6 +520,10 @@ class AppStore extends ChangeNotifier {
 
   // ── Peso ─────────────────────────────────────────────────────────────────
   Future<void> addWeight(double kg) async {
+    final epoch = _epoch;
+    final updated = _profile.copy()..weightKg = kg;
+    await saveProfile(updated);
+    if (epoch != _epoch) throw StateError('La sesión cambió.');
     final k = dayKey(DateTime.now());
     _weights.removeWhere((w) => dayKey(w.date) == k); // 1 registro por día
     _weights.add(WeightEntry(DateTime.now(), kg));
@@ -432,8 +531,10 @@ class AppStore extends ChangeNotifier {
     _profile.weightKg = kg;
     notifyListeners();
     await _prefs((p) async {
-      await p.setStringList(_kWeights, _weights.map((e) => e.toJson()).toList());
-      await p.setString(_kProfile, _profile.toJson());
+      await p.setStringList(
+        _kWeights,
+        _weights.map((e) => e.toJson()).toList(),
+      );
     });
   }
 

@@ -47,3 +47,7 @@ app.*.map.json
 # Claves y secretos: nunca subir. Copia lib/core/secrets.example.dart a
 # lib/core/secrets.dart y pon ahí tu propia API key.
 /lib/core/secrets.dart
+
+# Local Firebase emulators and rule-test dependencies
+node_modules/
+.firebase/
