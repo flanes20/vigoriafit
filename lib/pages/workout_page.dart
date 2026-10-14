@@ -50,11 +50,15 @@ class WorkoutTab extends StatelessWidget {
                     Icon(p.hasGym ? Icons.fitness_center_rounded : Icons.home_rounded,
                         size: 15, color: AppColors.muted),
                     const SizedBox(width: 6),
-                    Text(
-                        p.hasGym
-                            ? 'Rutinas para gimnasio · ${p.goal.label}'
-                            : 'Rutinas en casa · ${p.goal.label}',
-                        style: TextStyle(fontSize: 13, color: AppColors.muted)),
+                    Expanded(
+                      child: Text(
+                          p.hasGym
+                              ? 'Rutinas para gimnasio · ${p.goal.label}'
+                              : 'Rutinas en casa · ${p.goal.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, color: AppColors.muted)),
+                    ),
                   ],
                 ),
                 if (s.inGroup && !s.isTrainer) ...[
@@ -162,17 +166,17 @@ class WorkoutTab extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 2,
                       children: [
-                        Flexible(
-                          child: Text(w.title,
-                              style: TextStyle(
-                                  fontSize: 15.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.ink)),
-                        ),
-                        if (recommended) ...[
-                          const SizedBox(width: 8),
+                        Text(w.title,
+                            style: TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.ink)),
+                        if (recommended)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 7, vertical: 2),
@@ -186,11 +190,12 @@ class WorkoutTab extends StatelessWidget {
                                     color: AppColors.brandDark,
                                     fontWeight: FontWeight.w700)),
                           ),
-                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
                     Text('${w.minutes} min · ${w.exercises.length} ejercicios · ${w.focus}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 12.5, color: AppColors.muted)),
                   ],
                 ),

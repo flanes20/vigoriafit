@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../models/units.dart';
 import '../services/store.dart';
 
 class ProgressTab extends StatelessWidget {
@@ -35,11 +36,11 @@ class ProgressTab extends StatelessWidget {
                 // Métricas
                 Row(
                   children: [
-                    _stat('Peso actual', '${last.round()} kg', AppColors.brand),
+                    _stat('Peso actual', s.formatWeight(last, decimals: 0), AppColors.brand),
                     const SizedBox(width: 10),
                     _stat(
                       'Cambio',
-                      '${change > 0 ? '+' : ''}${change.toStringAsFixed(1)} kg',
+                      s.formatWeightDiff(change, decimals: 1),
                       change == 0
                           ? AppColors.muted
                           : (change < 0 ? AppColors.success : AppColors.warn),
@@ -53,7 +54,7 @@ class ProgressTab extends StatelessWidget {
                     const SizedBox(width: 10),
                     _stat(
                       'Meta',
-                      '${p.targetWeightKg.round()} kg',
+                      s.formatWeight(p.targetWeightKg, decimals: 0),
                       AppColors.mint,
                     ),
                   ],
@@ -124,11 +125,13 @@ class ProgressTab extends StatelessWidget {
 
   Widget _chart(AppStore s) {
     final weights = s.weights;
+    final isImperial = s.unitSystem == UnitSystem.imperial;
     final spots = <FlSpot>[];
     for (int i = 0; i < weights.length; i++) {
-      spots.add(FlSpot(i.toDouble(), weights[i].kg));
+      final yVal = isImperial ? UnitHelper.kgToLbs(weights[i].kg) : weights[i].kg;
+      spots.add(FlSpot(i.toDouble(), yVal));
     }
-    final values = weights.map((e) => e.kg).toList();
+    final values = weights.map((e) => isImperial ? UnitHelper.kgToLbs(e.kg) : e.kg).toList();
     final minY = (values.reduce((a, b) => a < b ? a : b) - 2);
     final maxY = (values.reduce((a, b) => a > b ? a : b) + 2);
     return LineChart(
@@ -172,7 +175,7 @@ class ProgressTab extends StatelessWidget {
             barWidth: 3,
             dotData: FlDotData(
               show: true,
-              getDotPainter: (spot, p1, p2, p3) => FlDotCirclePainter(
+              getDotPainter: (spot, _, $1, $2) => FlDotCirclePainter(
                 radius: 3.5,
                 color: AppColors.brand,
                 strokeWidth: 0,
@@ -255,7 +258,6 @@ class ProgressTab extends StatelessWidget {
 
   Future<void> _logWeight(BuildContext context, double current) async {
     double val = current.clamp(35, 200);
-    bool saving = false;
     await showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -271,7 +273,7 @@ class ProgressTab extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Peso de hoy (kg)',
+                  'Peso de hoy (${AppStore.instance.unitSystem.weightUnit})',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -280,7 +282,7 @@ class ProgressTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '${val.round()}',
+                  AppStore.instance.formatWeight(val, decimals: 1),
                   style: const TextStyle(
                     fontSize: 42,
                     fontWeight: FontWeight.w800,
@@ -299,27 +301,11 @@ class ProgressTab extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            setSheet(() => saving = true);
-                            try {
-                              await AppStore.instance.addWeight(val);
-                              if (context.mounted) Navigator.pop(context);
-                            } catch (_) {
-                              if (context.mounted) {
-                                setSheet(() => saving = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'No se pudo guardar el peso. Revisa la conexión.',
-                                    ),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    child: Text(saving ? 'Guardando…' : 'Guardar'),
+                    onPressed: () {
+                      AppStore.instance.addWeight(val);
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Guardar'),
                   ),
                 ),
               ],

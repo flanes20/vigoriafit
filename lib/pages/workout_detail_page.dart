@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../models/exercise_log.dart';
+import '../models/units.dart';
 import '../models/workout.dart';
 import '../services/store.dart';
 import '../services/trainer_service.dart';
@@ -36,17 +37,17 @@ class WorkoutDetailPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
                     _chip(Icons.schedule_rounded, '${workout.minutes} min'),
-                    const SizedBox(width: 8),
                     _chip(
                       workout.needsGym
                           ? Icons.fitness_center_rounded
                           : Icons.home_rounded,
                       workout.needsGym ? 'Gimnasio' : 'En casa',
                     ),
-                    const SizedBox(width: 8),
                     _chip(Icons.flag_rounded, workout.focus.split(' · ').first),
                   ],
                 ),
@@ -123,12 +124,16 @@ class WorkoutDetailPage extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: AppColors.muted),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppColors.ink,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
             ),
           ),
         ],
@@ -193,12 +198,16 @@ class WorkoutDetailPage extends StatelessWidget {
                             color: AppColors.warn,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            'Revisa por tu condición marcada',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: AppColors.warn,
-                              fontWeight: FontWeight.w600,
+                          Expanded(
+                            child: Text(
+                              'Revisa por tu condición marcada',
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.warn,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -208,12 +217,17 @@ class WorkoutDetailPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                e.sets,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.brand,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 80),
+                child: Text(
+                  e.sets,
+                  textAlign: TextAlign.right,
+                  maxLines: 2,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.brand,
+                  ),
                 ),
               ),
               const SizedBox(width: 4),
@@ -355,12 +369,15 @@ class WorkoutDetailPage extends StatelessWidget {
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Row(
                                     children: [
-                                      Text(
-                                        '${h.kg.toStringAsFixed(1)} kg$setsReps',
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.ink,
+                                      Flexible(
+                                        child: Text(
+                                          '${AppStore.instance.formatWeight(h.kg)}$setsReps',
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.ink,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                       const SizedBox(width: 8),
@@ -383,7 +400,7 @@ class WorkoutDetailPage extends StatelessWidget {
                                               : AppColors.danger,
                                         ),
                                         Text(
-                                          '${diff.abs().toStringAsFixed(1)} kg',
+                                          AppStore.instance.formatWeightDiff(diff.abs()),
                                           style: TextStyle(
                                             fontSize: 11.5,
                                             color: diff > 0
@@ -397,10 +414,12 @@ class WorkoutDetailPage extends StatelessWidget {
                                         borderRadius: BorderRadius.circular(20),
                                         onTap: () {
                                           editing = h;
-                                          ctrl.text =
-                                              h.kg == h.kg.roundToDouble()
-                                              ? h.kg.toInt().toString()
-                                              : h.kg.toStringAsFixed(1);
+                                          final dispVal = s.unitSystem == UnitSystem.imperial
+                                              ? UnitHelper.kgToLbs(h.kg)
+                                              : h.kg;
+                                          ctrl.text = dispVal == dispVal.roundToDouble()
+                                              ? dispVal.toInt().toString()
+                                              : dispVal.toStringAsFixed(1);
                                           setsCtrl.text =
                                               h.sets?.toString() ?? '';
                                           repsCtrl.text =
@@ -507,8 +526,8 @@ class WorkoutDetailPage extends StatelessWidget {
                                         const TextInputType.numberWithOptions(
                                           decimal: true,
                                         ),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Peso (kg)',
+                                    decoration: InputDecoration(
+                                      hintText: 'Peso (${s.unitSystem.weightUnit})',
                                       isDense: true,
                                     ),
                                   ),
@@ -547,15 +566,19 @@ class WorkoutDetailPage extends StatelessWidget {
                                     color: AppColors.brand,
                                   ),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    'Editando el registro de ${_fmtDate(editing!.date)}',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: AppColors.brand,
-                                      fontWeight: FontWeight.w600,
+                                  Expanded(
+                                    child: Text(
+                                      'Editando el registro de ${_fmtDate(editing!.date)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: AppColors.brand,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
+                                  const SizedBox(width: 8),
                                   InkWell(
                                     onTap: () {
                                       editing = null;
@@ -580,10 +603,13 @@ class WorkoutDetailPage extends StatelessWidget {
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
-                                  final kg = double.tryParse(
+                                  final entered = double.tryParse(
                                     ctrl.text.replaceAll(',', '.'),
                                   );
-                                  if (kg == null || kg <= 0) return;
+                                  if (entered == null || entered <= 0) return;
+                                  final kg = s.unitSystem == UnitSystem.imperial
+                                      ? UnitHelper.lbsToKg(entered)
+                                      : entered;
                                   final sets = int.tryParse(setsCtrl.text);
                                   final reps = int.tryParse(repsCtrl.text);
                                   if (editing != null) {

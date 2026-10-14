@@ -18,6 +18,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _name = TextEditingController();
   int _step = 0;
   static const _steps = 5;
+  bool _isSubmitting = false;
+  String? _nameError;
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   void _next() {
     if (_step == 0 && _name.text.trim().isEmpty) {
+      setState(() => _nameError = 'Escribe tu nombre para empezar 🙂');
       _snack('Escribe tu nombre para empezar 🙂');
       return;
     }
@@ -64,18 +67,21 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   Future<void> _finish() async {
-    _profile.name = _name.text.trim();
-    if (_profile.targetWeightKg == 0)
-      _profile.targetWeightKg = _profile.weightKg;
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
     try {
+      _profile.name = _name.text.trim();
+      if (_profile.targetWeightKg == 0) {
+        _profile.targetWeightKg = _profile.weightKg;
+      }
       await AppStore.instance.completeOnboarding(_profile);
-    } catch (_) {
-      if (mounted)
-        _snack(
-          'No se pudo guardar el perfil. Revisa la conexión e inténtalo nuevamente.',
-        );
+      // El "gate" de main.dart cambia a RootPage automáticamente.
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        _snack('Ocurrió un error al guardar tu perfil. Intenta de nuevo.');
+      }
     }
-    // El "gate" de main.dart cambia a RootPage automáticamente.
   }
 
   void _snack(String m) =>
@@ -130,8 +136,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _next,
-                  child: Text(_step == _steps - 1 ? '¡Empezar!' : 'Continuar'),
+                  onPressed: _isSubmitting ? null : _next,
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(_step == _steps - 1 ? '¡Empezar!' : 'Continuar'),
                 ),
               ),
             ),
@@ -218,9 +233,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
           controller: _name,
           textCapitalization: TextCapitalization.words,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
+          onChanged: (v) {
+            if (_nameError != null && v.trim().isNotEmpty) {
+              setState(() => _nameError = null);
+            }
+          },
+          decoration: InputDecoration(
             hintText: 'Tu nombre',
-            prefixIcon: Icon(Icons.person_rounded),
+            prefixIcon: const Icon(Icons.person_rounded),
+            errorText: _nameError,
           ),
         ),
       ],
@@ -357,7 +378,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: _profile.hasGym,
-          activeColor: AppColors.brand,
+          activeThumbColor: AppColors.brand,
           title: Text(
             'Tengo acceso a gimnasio',
             style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.ink),

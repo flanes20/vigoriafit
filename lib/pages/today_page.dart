@@ -27,6 +27,141 @@ class TodayTab extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               children: [
+                if (s.hasPendingSync)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: s.syncStatus == SyncStatus.failed
+                            ? AppColors.warn.withValues(alpha: 0.12)
+                            : AppColors.brandSoft,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: s.syncStatus == SyncStatus.failed
+                              ? AppColors.warn.withValues(alpha: 0.3)
+                              : AppColors.brand.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            s.syncStatus == SyncStatus.failed
+                                ? Icons.cloud_off_rounded
+                                : Icons.sync_rounded,
+                            size: 18,
+                            color: s.syncStatus == SyncStatus.failed
+                                ? AppColors.warn
+                                : AppColors.brand,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              s.syncStatus == SyncStatus.failed
+                                  ? 'Guardado en tu teléfono (sin conexión).'
+                                  : 'Sincronizando perfil con la nube…',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: s.syncStatus == SyncStatus.failed
+                                    ? AppColors.warn
+                                    : AppColors.brandDark,
+                              ),
+                            ),
+                          ),
+                          if (s.syncStatus == SyncStatus.failed)
+                            GestureDetector(
+                              onTap: () => s.retryPendingSync(),
+                              child: const Text(
+                                'Reintentar',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.warn,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (s.isProfileLoading && !s.hasPendingSync)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandSoft,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: const [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Cargando perfil desde la nube…',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.brandDark,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (s.profileLoadError != null && !s.hasPendingSync)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.warn.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.warn.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.cloud_off_rounded,
+                            size: 18,
+                            color: AppColors.warn,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'No se pudo sincronizar el perfil con la nube.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.warn,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => s.reloadProfileFromCloud(),
+                            child: const Text(
+                              'Reintentar',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.warn,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                 // Encabezado
                 Row(
                   children: [
@@ -34,11 +169,16 @@ class TodayTab extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Hola, ${p.name} 👋',
-                              style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.ink)),
+                          Text(
+                            p.name.trim().isNotEmpty
+                                ? 'Hola, ${p.name.trim()} 👋'
+                                : '¡Hola! 👋',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.ink,
+                            ),
+                          ),
                           Text(Fmt.date(DateTime.now()),
                               style: TextStyle(
                                   fontSize: 13, color: AppColors.muted)),
@@ -361,7 +501,10 @@ class TodayTab extends StatelessWidget {
   }
 
   Widget _menuPreview(Goal goal) {
-    final menu = Nutrition.dayMenu(goal);
+    final menu = Nutrition.dayMenu(
+      goal,
+      profile: AppStore.instance.profile,
+    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
