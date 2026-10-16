@@ -25,43 +25,56 @@ class FirebaseProfileRepository implements ProfileRepository {
   Future<AccountProfile> loadOrCreate(AccountIdentity user) async {
     final ref = _db.collection('users').doc(user.uid);
     final health = ref.collection('private').doc('health_profile');
+
+    // Try to fetch from server first; fall back to local cache if offline.
+    Future<DocumentSnapshot<Map<String, dynamic>>> getWithFallback(
+      DocumentReference<Map<String, dynamic>> docRef,
+    ) async {
+      try {
+        return await docRef
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 12));
+      } catch (_) {
+        // Network unavailable – use the Firestore offline cache.
+        return docRef.get(const GetOptions(source: Source.cache));
+      }
+    }
+
     final values = await Future.wait([
-      ref.get(const GetOptions(source: Source.server)),
-      health.get(const GetOptions(source: Source.server)),
-    ]).timeout(const Duration(seconds: 20));
+      getWithFallback(ref),
+      getWithFallback(health),
+    ]);
     var base = values[0].data();
     var private = values[1].data();
     if (base == null || private == null) {
-      await _db
-          .runTransaction((tx) async {
-            final a = await tx.get(ref);
-            final b = await tx.get(health);
-            final initial = Profile(name: user.name);
-            if (!a.exists) {
-              tx.set(ref, {
-                ..._basic(initial),
-                'onboarded': false,
-                'createdAt': FieldValue.serverTimestamp(),
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-            }
-            if (!b.exists) {
-              tx.set(health, {
-                ..._private(initial),
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-            }
-            base = a.data() ?? {..._basic(initial), 'onboarded': false};
-            private = b.data() ?? _private(initial);
-          })
-          .timeout(const Duration(seconds: 20));
+      // Documents don't exist yet – create them with a batch so the write
+      // is queued offline and sent as soon as connectivity is restored.
+      final batch = _db.batch();
+      final initial = Profile(name: user.name);
+      if (base == null) {
+        batch.set(ref, {
+          ..._basic(initial),
+          'onboarded': false,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        base = {..._basic(initial), 'onboarded': false};
+      }
+      if (private == null) {
+        batch.set(health, {
+          ..._private(initial),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        private = _private(initial);
+      }
+      await batch.commit();
     }
     final current = FirebaseAuth.instance.currentUser;
     if (current?.uid != user.uid) throw StateError('La sesión cambió.');
     final token = await current!.getIdTokenResult();
     return AccountProfile(
-      Profile.fromMap({...base!, ...private!}),
-      onboarded: base!['onboarded'] == true,
+      Profile.fromMap({...base, ...private}),
+      onboarded: base['onboarded'] == true,
       trainer: token.claims?['trainer'] == true,
     );
   }
@@ -73,21 +86,27 @@ class FirebaseProfileRepository implements ProfileRepository {
     required bool onboarded,
   }) async {
     final ref = _db.collection('users').doc(uid);
-    // A transaction fails offline instead of silently queuing a profile overwrite.
-    await _db
-        .runTransaction((tx) async {
-          final current = await tx.get(ref);
-          if (!current.exists) throw StateError('Primero recupera el perfil.');
-          tx.update(ref, {
-            ..._basic(profile),
-            'onboarded': onboarded,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-          tx.set(ref.collection('private').doc('health_profile'), {
-            ..._private(profile),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        })
-        .timeout(const Duration(seconds: 20));
+    // Use a WriteBatch instead of a transaction so writes are queued offline
+    // by the Firestore SDK and sent automatically when connectivity resumes.
+    // This avoids the "no internet" false-positive errors the transaction caused.
+    final batch = _db.batch();
+    batch.set(
+      ref,
+      {
+        ..._basic(profile),
+        'onboarded': onboarded,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    batch.set(
+      ref.collection('private').doc('health_profile'),
+      {
+        ..._private(profile),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+    await batch.commit();
   }
 }

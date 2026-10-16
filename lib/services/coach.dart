@@ -225,7 +225,7 @@ class Coach {
     // Qué comer
     if (_any(q, ['que como', 'que comer', 'comida', 'almuerzo', 'desayuno',
         'cena', 'menu', 'dieta'])) {
-      final menu = Nutrition.dayMenu(p.goal, profile: p);
+      final menu = Nutrition.dayMenu(p.goal);
       final lines = menu.entries
           .map((e) => '${e.key.emoji} ${e.key.label}: ${e.value.name}')
           .join('\n');

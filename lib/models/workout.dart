@@ -5,7 +5,7 @@ class Exercise {
   final String name;
   final String sets; // ej: "3 x 12" o "30 seg"
   final String note;
-  /// Clave de la ilustración en assets/exercises/[pose].png que muestra cómo
+  /// Clave de la ilustración en assets/exercises/<pose>.png que muestra cómo
   /// se realiza el movimiento.
   final String pose;
   /// Condiciones/lesiones con las que conviene evitar o adaptar este

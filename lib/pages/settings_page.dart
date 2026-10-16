@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../models/profile.dart';
-import '../models/units.dart';
 import '../services/notifications.dart';
 import '../services/store.dart';
+import '../services/sync_state.dart';
+import '../services/unit_system.dart';
 import 'join_group_page.dart';
 import 'trainer_page.dart';
 
@@ -24,10 +25,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late final Profile _p;
   late final TextEditingController _name;
-  bool _isSaving = false;
-  bool _isRetrying = false;
-  bool _isReloadingProfile = false;
-  String? _nameError;
+  bool _saving = false;
+  SyncState _syncState = SyncState.idle;
 
   @override
   void initState() {
@@ -43,52 +42,34 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _save() async {
-    final trimmed = _name.text.trim();
-    if (trimmed.isEmpty) {
-      setState(() => _nameError = 'El nombre no puede estar vacío');
+    if (_saving) return;
+    final name = _name.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe tu nombre para guardar.')),
+      );
       return;
     }
-
+    _p.name = name;
     setState(() {
-      _nameError = null;
-      _isSaving = true;
+      _saving = true;
+      _syncState = SyncState.saving;
     });
-
-    _p.name = trimmed;
     try {
-      final status = await AppStore.instance.saveProfile(_p);
-      if (mounted) {
-        if (status == SyncStatus.synced) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Guardado confirmado en la nube ✅'),
-              backgroundColor: AppColors.success,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Guardado en este dispositivo. Pendiente de sincronizar (sin conexión) ⚠️',
-              ),
-              backgroundColor: AppColors.warn,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-        Navigator.of(context).pop();
-      }
+      await AppStore.instance.saveProfile(_p);
+      if (!mounted) return;
+      setState(() => _syncState = SyncState.confirmed);
+      // Breve pausa para que el usuario vea "Cambios guardados." antes de salir.
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: $e'),
-            backgroundColor: AppColors.warn,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (!mounted) return;
+      final isPermission = e.toString().contains('PERMISSION_DENIED') ||
+          e.toString().contains('permission-denied');
+      setState(() {
+        _syncState = isPermission ? SyncState.rejected : SyncState.failed;
+        _saving = false;
+      });
     }
   }
 
@@ -103,183 +84,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _syncStatusBanner() {
-    final s = AppStore.instance;
-    if (!s.hasPendingSync) return const SizedBox.shrink();
-
-    final isFailed = s.syncStatus == SyncStatus.failed;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isFailed
-              ? AppColors.warn.withValues(alpha: 0.12)
-              : AppColors.brandSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isFailed
-                ? AppColors.warn.withValues(alpha: 0.3)
-                : AppColors.brand.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isFailed ? Icons.cloud_off_rounded : Icons.sync_rounded,
-              color: isFailed ? AppColors.warn : AppColors.brand,
-              size: 22,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isFailed ? 'Guardado pendiente' : 'Sincronizando con la nube…',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: isFailed ? AppColors.warn : AppColors.brandDark,
-                    ),
-                  ),
-                  Text(
-                    s.syncError ??
-                        'Tus cambios están a salvo en tu teléfono. Se sincronizarán automáticamente.',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.ink.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: _isRetrying
-                  ? null
-                  : () async {
-                      setState(() => _isRetrying = true);
-                      try {
-                        final ok = await s.retryPendingSync();
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(ok
-                                  ? '¡Sincronizado con éxito! ☁️'
-                                  : 'Sigue sin conexión. Tus datos siguen seguros localmente.'),
-                            ),
-                          );
-                        }
-                      } finally {
-                        if (mounted) setState(() => _isRetrying = false);
-                      }
-                    },
-              child: _isRetrying
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'Reintentar',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _cloudProfileStatusBanner() {
-    final s = AppStore.instance;
-    if (s.isProfileLoading) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.brandSoft,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: const [
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Cargando perfil desde la nube…',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (s.profileLoadError != null) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.warn.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.warn.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.info_outline_rounded, color: AppColors.warn, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  s.profileLoadError!,
-                  style: const TextStyle(fontSize: 12, color: AppColors.warn),
-                ),
-              ),
-              TextButton(
-                onPressed: _isReloadingProfile
-                    ? null
-                    : () async {
-                        setState(() => _isReloadingProfile = true);
-                        try {
-                          await s.reloadProfileFromCloud();
-                          if (mounted) {
-                            setState(() {
-                              _p.copyFrom(s.profile);
-                              _name.text = _p.name;
-                            });
-                          }
-                        } finally {
-                          if (mounted) setState(() => _isReloadingProfile = false);
-                        }
-                      },
-                child: _isReloadingProfile
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text(
-                        'Reintentar',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                      ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
-  }
-
   Widget _body(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -291,15 +95,11 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         children: [
-          _syncStatusBanner(),
           _label('Apariencia'),
           const SizedBox(height: 10),
           _themeSelector(),
-          const SizedBox(height: 26),
-
-          _label('Unidades'),
-          const SizedBox(height: 10),
-          _unitSelector(),
+          const SizedBox(height: 16),
+          _unitsSelector(),
           const SizedBox(height: 26),
 
           _trainerSection(),
@@ -312,19 +112,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
           _label('Tu perfil'),
           const SizedBox(height: 10),
-          _cloudProfileStatusBanner(),
           TextField(
             controller: _name,
             textCapitalization: TextCapitalization.words,
-            onChanged: (v) {
-              if (_nameError != null && v.trim().isNotEmpty) {
-                setState(() => _nameError = null);
-              }
-            },
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Nombre',
-              prefixIcon: const Icon(Icons.person_rounded),
-              errorText: _nameError,
+              prefixIcon: Icon(Icons.person_rounded),
             ),
           ),
           const SizedBox(height: 18),
@@ -366,7 +159,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _p.hasGym,
-            activeThumbColor: AppColors.brand,
+            activeColor: AppColors.brand,
             title: Text(
               'Tengo acceso a gimnasio',
               style: TextStyle(
@@ -388,38 +181,46 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 26),
           _sub('Tu cuerpo'),
           const SizedBox(height: 8),
-          _sliderTile(
-            'Edad',
-            _p.age.toDouble(),
-            12,
-            90,
-            (v) => setState(() => _p.age = v.round()),
-            '${_p.age} años',
-          ),
-          _sliderTile(
-            'Estatura',
-            _p.heightCm,
-            130,
-            220,
-            (v) => setState(() => _p.heightCm = v),
-            AppStore.instance.formatHeight(_p.heightCm),
-          ),
-          _sliderTile(
-            'Peso actual',
-            _p.weightKg,
-            35,
-            200,
-            (v) => setState(() => _p.weightKg = v),
-            AppStore.instance.formatWeight(_p.weightKg),
-          ),
-          _sliderTile(
-            'Peso meta',
-            _p.targetWeightKg,
-            35,
-            200,
-            (v) => setState(() => _p.targetWeightKg = v),
-            AppStore.instance.formatWeight(_p.targetWeightKg),
-          ),
+          Builder(builder: (context) {
+            final u = AppStore.instance.units;
+            return Column(
+              children: [
+                _sliderTile(
+                  'Edad',
+                  _p.age.toDouble(),
+                  12,
+                  90,
+                  (v) => setState(() => _p.age = v.round()),
+                  '${_p.age} años',
+                ),
+                _sliderTile(
+                  'Estatura',
+                  u.displayHeight(_p.heightCm),
+                  u.heightMin,
+                  u.heightMax,
+                  (v) => setState(() => _p.heightCm = u.canonicalHeight(v)),
+                  u.formatHeight(_p.heightCm),
+                ),
+                _sliderTile(
+                  'Peso actual',
+                  u.displayWeight(_p.weightKg),
+                  u.weightMin,
+                  u.weightMax,
+                  (v) => setState(() => _p.weightKg = u.canonicalWeight(v)),
+                  u.formatWeight(_p.weightKg),
+                ),
+                _sliderTile(
+                  'Peso meta',
+                  u.displayWeight(_p.targetWeightKg),
+                  u.weightMin,
+                  u.weightMax,
+                  (v) =>
+                      setState(() => _p.targetWeightKg = u.canonicalWeight(v)),
+                  u.formatWeight(_p.targetWeightKg),
+                ),
+              ],
+            );
+          }),
 
           const SizedBox(height: 26),
           _sub('Condiciones de salud'),
@@ -447,14 +248,6 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             }).toList(),
           ),
-          if (_p.conditions.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '✓ Sin condiciones médicas registradas',
-                style: TextStyle(fontSize: 12, color: AppColors.muted, fontStyle: FontStyle.italic),
-              ),
-            ),
           const SizedBox(height: 18),
           _sub('Alergias / intolerancias'),
           const SizedBox(height: 8),
@@ -476,29 +269,67 @@ class _SettingsPageState extends State<SettingsPage> {
               );
             }).toList(),
           ),
-          if (_p.allergies.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                '✓ Sin alergias o intolerancias alimentarias registradas',
-                style: TextStyle(fontSize: 12, color: AppColors.muted, fontStyle: FontStyle.italic),
-              ),
-            ),
 
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _isSaving ? null : _save,
-            icon: _isSaving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+          if (_syncState.needsAttention)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.danger.withOpacity(0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        size: 18, color: AppColors.danger),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _syncState.label,
+                        style:
+                            TextStyle(fontSize: 13, color: AppColors.danger),
+                      ),
                     ),
+                    if (_syncState == SyncState.failed)
+                      TextButton(
+                        onPressed: _save,
+                        child: const Text('Reintentar'),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          if (_syncState == SyncState.confirmed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      size: 16, color: AppColors.success),
+                  const SizedBox(width: 6),
+                  Text(
+                    _syncState.label,
+                    style:
+                        TextStyle(fontSize: 13, color: AppColors.success),
+                  ),
+                ],
+              ),
+            ),
+          ElevatedButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.check_rounded),
-            label: Text(_isSaving ? 'Guardando cambios…' : 'Guardar cambios'),
+            label: Text(_saving ? 'Guardando…' : 'Guardar cambios'),
           ),
           const SizedBox(height: 24),
           Container(
@@ -543,46 +374,13 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           const SizedBox(height: 10),
           TextButton.icon(
-            onPressed: () => _confirmLogout(context),
+            onPressed: () {
+              Navigator.of(context).popUntil((r) => r.isFirst);
+              AppStore.instance.logout();
+            },
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Cerrar sesión'),
             style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          '¿Cerrar sesión?',
-          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.ink),
-        ),
-        content: Text(
-          '¿Estás seguro de que deseas salir? Tu cuenta y datos guardados permanecerán seguros en Firebase.',
-          style: TextStyle(color: AppColors.ink),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancelar', style: TextStyle(color: AppColors.muted)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).popUntil((r) => r.isFirst);
-              await AppStore.instance.logout();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.danger,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Cerrar sesión'),
           ),
         ],
       ),
@@ -607,7 +405,7 @@ class _SettingsPageState extends State<SettingsPage> {
               child: SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: s.workoutReminderOn,
-                activeThumbColor: AppColors.brand,
+                activeColor: AppColors.brand,
                 title: Text(
                   'Recordar entrenar',
                   style: TextStyle(
@@ -673,7 +471,7 @@ class _SettingsPageState extends State<SettingsPage> {
               child: SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: s.waterReminderOn,
-                activeThumbColor: AppColors.brand,
+                activeColor: AppColors.brand,
                 title: Text(
                   'Recordar tomar agua',
                   style: TextStyle(
@@ -724,7 +522,7 @@ class _SettingsPageState extends State<SettingsPage> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: s.isTrainer,
-              activeThumbColor: AppColors.brand,
+              activeColor: AppColors.brand,
               title: Text(
                 'Soy entrenador',
                 style: TextStyle(
@@ -733,10 +531,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               subtitle: Text(
-                'Crea un grupo y asigna rutinas a tus alumnos.',
+                s.isTrainer
+                    ? 'Modo entrenador habilitado. Puedes acceder a tu panel de grupos.'
+                    : 'Activa este modo para crear un grupo y asignar rutinas a tus alumnos.',
                 style: TextStyle(fontSize: 12, color: AppColors.muted),
               ),
-              onChanged: (v) => s.setIsTrainer(v),
+              onChanged: (v) async {
+                await s.setIsTrainer(v);
+              },
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -762,6 +564,75 @@ class _SettingsPageState extends State<SettingsPage> {
                   size: 18,
                 ),
                 label: Text(s.isTrainer ? 'Panel de entrenador' : 'Mi grupo'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _unitsSelector() {
+    return ListenableBuilder(
+      listenable: AppStore.instance,
+      builder: (context, _) {
+        final current = AppStore.instance.units;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Unidades',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: UnitSystem.values.map((u) {
+                  final active = u == current;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => AppStore.instance.setUnits(u),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? AppColors.brand
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Text(
+                          u == UnitSystem.metric ? 'Métrico' : 'Imperial',
+                          style: TextStyle(
+                            color:
+                                active ? Colors.white : AppColors.muted,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                current == UnitSystem.metric
+                    ? 'Peso en kg · Estatura en cm'
+                    : 'Peso en lb · Estatura en pulgadas',
+                style: TextStyle(fontSize: 11.5, color: AppColors.faint),
               ),
             ),
           ],
@@ -813,65 +684,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _unitSelector() {
-    return ListenableBuilder(
-      listenable: AppStore.instance,
-      builder: (context, _) {
-        final current = AppStore.instance.unitSystem;
-        return Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceAlt,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: UnitSystem.values.map((u) {
-              final active = u == current;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => AppStore.instance.setUnitSystem(u),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: active ? AppColors.brand : Colors.transparent,
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          u.label,
-                          style: TextStyle(
-                            color: active ? Colors.white : AppColors.ink,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          u.description,
-                          style: TextStyle(
-                            color: active
-                                ? Colors.white.withValues(alpha: 0.85)
-                                : AppColors.muted,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _chip(String label, bool selected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -905,6 +717,8 @@ class _SettingsPageState extends State<SettingsPage> {
     ValueChanged<double> onChanged,
     String display,
   ) {
+    final clampedValue = value.clamp(min, max);
+    final divisions = (max - min).round();
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
@@ -928,10 +742,10 @@ class _SettingsPageState extends State<SettingsPage> {
           SizedBox(
             width: 160,
             child: Slider(
-              value: value,
+              value: clampedValue,
               min: min,
               max: max,
-              divisions: (max - min).round(),
+              divisions: divisions > 0 ? divisions : null,
               activeColor: AppColors.brand,
               onChanged: onChanged,
             ),

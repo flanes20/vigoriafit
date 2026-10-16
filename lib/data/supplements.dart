@@ -7,7 +7,7 @@ class Supplement {
   final String benefit;
   final String timing;
   final List<Goal> goals;
-  /// Clave de la foto en assets/supplements/[image].jpg
+  /// Clave de la foto en assets/supplements/<image>.jpg
   final String image;
   /// Condiciones con las que este suplemento requiere precaución (se muestra
   /// con aviso, no se oculta). Orientativo, no reemplaza a un profesional.
@@ -101,15 +101,4 @@ class Supplements {
     final rest = all.where((s) => !s.goals.contains(g)).toList();
     return [...match, ...rest];
   }
-
-  /// Suplementos recomendados según el perfil del usuario (US38).
-  static List<Supplement> forProfile(Profile p) => forGoal(p.goal);
-
-  /// Determina si un suplemento tiene advertencia médica para el perfil (US38).
-  static bool hasCaution(Supplement s, Profile p) =>
-      s.cautionFor.any(p.conditions.contains);
-
-  /// Retorna la nota médica de precaución si aplica al perfil del usuario.
-  static String? getCautionNote(Supplement s, Profile p) =>
-      hasCaution(s, p) ? s.cautionNote : null;
 }

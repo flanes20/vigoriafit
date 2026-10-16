@@ -34,6 +34,12 @@ class TrainerService {
       _db.collection('groups');
 
   /// Crea un grupo nuevo y devuelve (groupId, código de 6 dígitos).
+  ///
+  /// Escribe el grupo primero y el invite después (secuencial) para que las
+  /// reglas de Firestore puedan usar get() en lugar de getAfter():
+  ///  - getAfter() no funciona de forma confiable con WriteBatch.
+  ///  - Al escribir secuencial, el grupo ya existe cuando se valida el invite.
+  /// Si el invite falla, se borra el grupo para dejar Firestore limpio.
   static Future<(String, String)> createGroup(String trainerName) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Inicia sesión.');
@@ -41,24 +47,36 @@ class TrainerService {
       final code = _newCode();
       final doc = _groups.doc();
       final invite = _db.collection('groupInvites').doc(code);
-      final created = await _db.runTransaction((tx) async {
-        if ((await tx.get(invite)).exists) return false;
-        tx.set(doc, {
-          'trainerId': user.uid,
-          'trainerName': trainerName,
-          'code': code,
-          'createdAt': FieldValue.serverTimestamp(),
-          'assignedWorkoutId': null,
-          'assignedWorkoutTitle': null,
-        });
-        tx.set(invite, {
+
+      // Verificar si el código ya existe antes de escribir.
+      final inviteSnap = await invite.get();
+      if (inviteSnap.exists) continue; // colisión de código, reintentar
+
+      // Paso 1: crear el grupo. Con esto, las reglas del invite pueden usar
+      // get() para verificar que el trainerId coincide.
+      await doc.set({
+        'trainerId': user.uid,
+        'trainerName': trainerName,
+        'code': code,
+        'createdAt': FieldValue.serverTimestamp(),
+        'assignedWorkoutId': null,
+        'assignedWorkoutTitle': null,
+      });
+
+      // Paso 2: crear el invite. Las reglas ahora pueden leer el grupo con get().
+      try {
+        await invite.set({
           'groupId': doc.id,
           'trainerId': user.uid,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        return true;
-      });
-      if (created) return (doc.id, code);
+      } catch (e) {
+        // Si el invite falla, borrar el grupo para no dejar documentos huérfanos.
+        await doc.delete().catchError((_) {});
+        rethrow;
+      }
+
+      return (doc.id, code);
     }
     throw StateError('No se pudo generar un código. Inténtalo nuevamente.');
   }

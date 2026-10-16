@@ -18,8 +18,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _name = TextEditingController();
   int _step = 0;
   static const _steps = 5;
-  bool _isSubmitting = false;
-  String? _nameError;
+  bool _saving = false;
+  String? _saveError;
 
   @override
   void initState() {
@@ -37,7 +37,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   void _next() {
     if (_step == 0 && _name.text.trim().isEmpty) {
-      setState(() => _nameError = 'Escribe tu nombre para empezar 🙂');
       _snack('Escribe tu nombre para empezar 🙂');
       return;
     }
@@ -67,19 +66,24 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   Future<void> _finish() async {
-    if (_isSubmitting) return;
-    setState(() => _isSubmitting = true);
+    if (_saving) return;
+    _profile.name = _name.text.trim();
+    if (_profile.targetWeightKg == 0)
+      _profile.targetWeightKg = _profile.weightKg;
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
     try {
-      _profile.name = _name.text.trim();
-      if (_profile.targetWeightKg == 0) {
-        _profile.targetWeightKg = _profile.weightKg;
-      }
       await AppStore.instance.completeOnboarding(_profile);
       // El "gate" de main.dart cambia a RootPage automáticamente.
     } catch (e) {
       if (mounted) {
-        setState(() => _isSubmitting = false);
-        _snack('Ocurrió un error al guardar tu perfil. Intenta de nuevo.');
+        setState(() {
+          _saving = false;
+          _saveError =
+              'No se pudo guardar el perfil. Revisa la conexión e inténtalo nuevamente.';
+        });
       }
     }
   }
@@ -131,22 +135,48 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 ],
               ),
             ),
+            if (_saveError != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5544B).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: const Color(0xFFE5544B).withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded,
+                          size: 18, color: Color(0xFFE5544B)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _saveError!,
+                          style: const TextStyle(
+                              fontSize: 13, color: Color(0xFFE5544B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _next,
-                  child: _isSubmitting
+                  onPressed: _saving ? null : _next,
+                  child: _saving
                       ? const SizedBox(
-                          width: 20,
-                          height: 20,
+                          width: 18,
+                          height: 18,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
+                              strokeWidth: 2, color: Colors.white),
                         )
-                      : Text(_step == _steps - 1 ? '¡Empezar!' : 'Continuar'),
+                      : Text(
+                          _step == _steps - 1 ? '¡Empezar!' : 'Continuar'),
                 ),
               ),
             ),
@@ -233,15 +263,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
           controller: _name,
           textCapitalization: TextCapitalization.words,
           textInputAction: TextInputAction.done,
-          onChanged: (v) {
-            if (_nameError != null && v.trim().isNotEmpty) {
-              setState(() => _nameError = null);
-            }
-          },
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             hintText: 'Tu nombre',
-            prefixIcon: const Icon(Icons.person_rounded),
-            errorText: _nameError,
+            prefixIcon: Icon(Icons.person_rounded),
           ),
         ),
       ],
@@ -378,7 +402,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: _profile.hasGym,
-          activeThumbColor: AppColors.brand,
+          activeColor: AppColors.brand,
           title: Text(
             'Tengo acceso a gimnasio',
             style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.ink),

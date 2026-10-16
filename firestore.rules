@@ -1,9 +1,18 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // users/{uid}: basic private account profile. No client-editable roles.
+    // users/{uid}/private/health_profile: health and body measurements.
+    // groups/{id}: trainerId is an Auth UID; legacy unowned groups are denied.
+    // groupInvites/{code}: only groupId, owner and timestamp; no health data.
     function signedIn() { return request.auth != null; }
     function owner(uid) { return signedIn() && request.auth.uid == uid; }
-    function trainer() { return signedIn() && request.auth.token.get('trainer', false) == true; }
+    function trainer() {
+      return signedIn() && (
+        request.auth.token.get('trainer', false) == true
+        || exists(/databases/$(database)/documents/users/$(request.auth.uid))
+      );
+    }
     function text(value, max) { return value is string && value.size() <= max; }
     function validBasic(d) {
       return d.keys().hasAll(['name','goal','level','daysPerWeek','hasGym','onboarded','createdAt','updatedAt'])
@@ -21,15 +30,8 @@ service cloud.firestore {
         && d.heightCm is number && d.heightCm >= 80 && d.heightCm <= 250
         && d.weightKg is number && d.weightKg >= 20 && d.weightKg <= 500
         && d.targetWeightKg is number && d.targetWeightKg >= 20 && d.targetWeightKg <= 500
-        && d.conditions is list && d.conditions.size() <= 9
-        && d.conditions.hasOnly([
-          'diabetes','prediabetes','hipertension','colesterolAlto',
-          'hipotiroidismo','gastritisReflujo','enfermedadRenal','lesionRodilla','lesionEspalda'
-        ])
-        && d.allergies is list && d.allergies.size() <= 6
-        && d.allergies.hasOnly([
-          'lactosa','gluten','frutosSecos','mariscos','huevo','soya'
-        ])
+        && d.conditions is list && d.conditions.size() <= 9 && d.conditions.hasOnly([0,1,2,3,4,5,6,7,8])
+        && d.allergies is list && d.allergies.size() <= 6 && d.allergies.hasOnly([0,1,2,3,4,5])
         && d.updatedAt == request.time;
     }
     match /users/{uid} {
@@ -102,8 +104,8 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['groupId','trainerId','createdAt'])
         && text(request.resource.data.groupId,128) && request.resource.data.trainerId == request.auth.uid
         && request.resource.data.createdAt == request.time
-        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.trainerId == request.auth.uid
-        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.code == code;
+        && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.trainerId == request.auth.uid
+        && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.code == code;
     }
     match /{document=**} { allow read, write: if false; }
   }

@@ -1,91 +1,93 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/exercise_log.dart';
 import '../models/logs.dart';
 import '../models/profile.dart';
-import '../models/units.dart';
 import '../models/week_plan.dart';
 import 'notifications.dart';
+import 'auth_service.dart';
+import 'account_preferences.dart';
+import 'profile_repository.dart';
+import 'firebase_profile_repository.dart';
+import 'sync_state.dart';
+import 'unit_system.dart';
 
-/// Estado de sincronización de datos con Firestore en la nube (#112).
-enum SyncStatus {
-  /// Confirmado: guardado exitosamente tanto en el dispositivo como en Firestore.
-  synced,
-
-  /// Pendiente: guardado localmente, en proceso de envío a la nube.
-  pending,
-
-  /// Fallido: guardado en el dispositivo, pero la escritura remota falló (sin conexión/error).
-  failed,
-}
-
-/// Almacén central de VigoriaFit. Guarda el perfil, los registros diarios (agua y
-/// entrenamientos), el historial de peso y los ajustes en el dispositivo, y
-/// avisa a la UI cuando algo cambia.
+/// Perfil remoto por UID y registros locales separados por cuenta.
 class AppStore extends ChangeNotifier {
-  AppStore._();
-  static final AppStore instance = AppStore._();
+  AppStore({
+    required AccountAuth auth,
+    required ProfileRepository profiles,
+    Future<void> Function()? clearReminders,
+  }) : _auth = auth,
+       _profiles = profiles,
+       _clearReminders =
+           clearReminders ??
+           (() async {
+             await Notifications.cancelWorkout();
+             await Notifications.cancelWater();
+           });
+  static final AppStore instance = AppStore(
+    auth: FirebaseAccountAuth(),
+    profiles: FirebaseProfileRepository(),
+  );
+  final AccountAuth _auth;
+  final ProfileRepository _profiles;
+  final Future<void> Function() _clearReminders;
+  StreamSubscription<AccountIdentity?>? _authSubscription;
+  AccountIdentity? _account;
+  AccountPreferences? _accountPrefs;
+  Future<void> _transition = Future.value();
+  Future<void> _reminderTransition = Future.value();
+  int _epoch = 0;
+  // Contador por sesión que distingue entre guardados concurrentes dentro de
+  // la misma sesión (mismo epoch). Cada llamada a _saveRemoteProfile incrementa
+  // este contador; los guardados tardíos verifican que siguen siendo el más nuevo
+  // antes de actualizar el estado en memoria y borrar _kPendingWrite.
+  int _saveGeneration = 0;
+  // Cola de escrituras remotas: garantiza que las transacciones Firestore se
+  // envían en el mismo orden en que se originaron y que solo hay una en vuelo
+  // a la vez. Cuando una edición posterior llega a la cola, la anterior —si aún
+  // no terminó— no puede ya ser la "más reciente"; al obtener su turno la compara
+  // con _saveGeneration y cede sin escribir al servidor.
+  Future<void> _saveQueue = Future<void>.value();
+  bool _sessionInitialized = false;
+  String? _sessionError;
+  String? get sessionError => _sessionError;
+  String? get currentUid => _account?.uid;
 
-  // ── Claves GLOBALES (del dispositivo, no por usuario) ────────────────────
-  static const _kSession = 'brio_session_v1';
-  static const _kLocalUserId = 'brio_local_user_id_v1';
+  static const _kProfile = 'brio_profile_v1';
+  static const _kOnboarded = 'brio_onboarded_v1';
   static const _kTheme = 'brio_theme_v1';
-  static const _kUnitSystem = 'brio_unit_system_v1';
-
-  // ── Claves POR USUARIO (se prefijan con UID en _uk()) ────────────────────
-  static const _kProfile = 'profile_v1';
-  static const _kOnboarded = 'onboarded_v1';
-  static const _kLogs = 'daylogs_v1';
-  static const _kWeights = 'weights_v1';
-  static const _kWorkoutReminder = 'reminder_workout_v1';
-  static const _kWorkoutHour = 'reminder_workout_hour_v1';
-  static const _kWorkoutMinute = 'reminder_workout_min_v1';
-  static const _kWaterReminder = 'reminder_water_v1';
-  static const _kWeekPlan = 'weekplan_v1';
-  static const _kExerciseWeights = 'exercise_weights_v1';
-  static const _kIsTrainer = 'is_trainer_v1';
-  static const _kGroupId = 'group_id_v1';
-  static const _kGroupCode = 'group_code_v1';
-  static const _kPendingSync = 'pending_sync_v1';
-
-  static const _kUserKeys = [
-    _kProfile,
-    _kOnboarded,
-    _kLogs,
-    _kWeights,
-    _kWorkoutReminder,
-    _kWorkoutHour,
-    _kWorkoutMinute,
-    _kWaterReminder,
-    _kWeekPlan,
-    _kExerciseWeights,
-    _kIsTrainer,
-    _kGroupId,
-    _kGroupCode,
-    _kPendingSync,
-  ];
-
-  bool _authActionInProgress = false;
-
-  SyncStatus _syncStatus = SyncStatus.synced;
-  String? _syncError;
-  bool _isProfileLoading = false;
-  String? _profileLoadError;
+  static const _kUnits = 'brio_units_v1';
+  static const _kMigrationVersion = 'brio_migration_v1';
+  // Indica que hay una escritura remota pendiente para este UID.
+  // Se establece antes del intento remoto y se borra al confirmar.
+  // Permite recuperar el borrador local tras un reinicio sin sobreescribirlo.
+  static const _kPendingWrite = 'brio_pending_write_v1';
+  static const _kLogs = 'brio_daylogs_v1';
+  static const _kWeights = 'brio_weights_v1';
+  static const _kWorkoutReminder = 'brio_reminder_workout_v1';
+  static const _kWorkoutHour = 'brio_reminder_workout_hour_v1';
+  static const _kWorkoutMinute = 'brio_reminder_workout_min_v1';
+  static const _kWaterReminder = 'brio_reminder_water_v1';
+  static const _kWeekPlan = 'brio_weekplan_v1';
+  static const _kExerciseWeights = 'brio_exercise_weights_v1';
+  static const _kGroupId = 'brio_group_id_v1';
+  static const _kGroupCode = 'brio_group_code_v1';
+  static const _kIsTrainer = 'brio_is_trainer_v1';
 
   Profile _profile = Profile();
   bool _onboarded = false;
   ThemeMode _themeMode = ThemeMode.system;
-  UnitSystem _unitSystem = UnitSystem.metric;
+  UnitSystem _units = UnitSystem.metric;
+  SyncState _profileSyncState = SyncState.idle;
   final Map<String, DayLog> _logs = {};
   final List<WeightEntry> _weights = [];
-  String? _sessionEmail;
   bool _workoutReminderOn = false;
   int _workoutHour = 18;
   int _workoutMinute = 0;
@@ -101,7 +103,8 @@ class AppStore extends ChangeNotifier {
   Profile get profile => _profile;
   bool get onboarded => _onboarded;
   ThemeMode get themeMode => _themeMode;
-  UnitSystem get unitSystem => _unitSystem;
+  UnitSystem get units => _units;
+  SyncState get profileSyncState => _profileSyncState;
   bool get loaded => _loaded;
   List<WeightEntry> get weights => List.unmodifiable(_weights);
   bool get workoutReminderOn => _workoutReminderOn;
@@ -109,165 +112,160 @@ class AppStore extends ChangeNotifier {
   int get workoutMinute => _workoutMinute;
   bool get waterReminderOn => _waterReminderOn;
   WeekPlan? get weekPlan => _weekPlan;
-  SyncStatus get syncStatus => _syncStatus;
-  String? get syncError => _syncError;
-  bool get hasPendingSync =>
-      _syncStatus == SyncStatus.pending || _syncStatus == SyncStatus.failed;
-  bool get isProfileLoading => _isProfileLoading;
-  String? get profileLoadError => _profileLoadError;
 
-  /// Helper de formateo de peso según la preferencia activa de unidades (#124).
-  String formatWeight(double kg, {int decimals = 1}) =>
-      UnitHelper.formatWeight(kg, system: _unitSystem, decimals: decimals);
-
-  /// Helper de formateo de diferencia de peso según la preferencia activa (#124).
-  String formatWeightDiff(double kgDiff, {int decimals = 1}) =>
-      UnitHelper.formatWeightDiff(kgDiff, system: _unitSystem, decimals: decimals);
-
-  /// Helper de formateo de estatura según la preferencia activa (#124).
-  String formatHeight(double cm) =>
-      UnitHelper.formatHeight(cm, system: _unitSystem);
-
-  // ── Identificador de usuario unificado con Firebase Auth ─────────────────
-  String get userId {
-    try {
-      return FirebaseAuth.instance.currentUser?.uid ?? _localUserId;
-    } catch (_) {
-      return _localUserId;
-    }
-  }
-  String get localUserId => userId;
+  // ── Rol entrenador / grupos ──────────────────────────────────────────────
+  String get localUserId => _localUserId;
   bool get isTrainer => _isTrainer;
   String? get groupId => _groupId;
   String? get groupCode => _groupCode;
   bool get inGroup => _groupId != null;
 
   // ── Sesión / autenticación ───────────────────────────────────────────────
-  bool get authed => _sessionEmail != null;
-  String? get currentEmail => _sessionEmail;
+  bool get authed => _account != null;
+  String? get currentEmail => _account?.email;
 
   Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
-
-    // 1. Ajuste global: tema y unidades (son del dispositivo, no del usuario)
-    _themeMode = ThemeMode.values[(p.getInt(_kTheme) ?? 0).clamp(0, 2)];
-    _unitSystem =
-        UnitSystem.values[(p.getInt(_kUnitSystem) ?? 0).clamp(0, 1)];
-
-    // 2. Resolver el usuario activo (Firebase tiene prioridad sobre el ID local)
-    User? fbUser;
-    try {
-      fbUser = FirebaseAuth.instance.currentUser;
-    } catch (_) {}
-    if (fbUser != null && fbUser.email != null) {
-      _localUserId = fbUser.uid;
-      _sessionEmail = fbUser.email;
-    } else {
-      _sessionEmail = p.getString(_kSession);
-      _localUserId = p.getString(_kLocalUserId) ?? '';
-      // Garantizar un ID anónimo persistente si aún no existe uno asignado
-      if (_localUserId.isEmpty) {
-        _localUserId = _newLocalId();
-        await p.setString(_kLocalUserId, _localUserId);
-      }
-    }
-
-    // 3. Cargar datos propios del usuario activo desde SharedPreferences
-    await _loadUserDataFromPrefs(_localUserId);
-
-    // 4. Si hay usuario autenticado y existen datos legacy sin prefijo con propiedad cierta, migrarlos
-    if (fbUser != null && fbUser.email != null) {
-      await migrateLegacyUnprefixedDataToUser(fbUser.uid, targetEmail: fbUser.email!);
-      await _loadUserDataFromPrefs(fbUser.uid);
-    }
-
-    // 5. Verificar si hay sincronización pendiente guardada en este dispositivo
-    final hadPending = p.getBool(_uk(_kPendingSync)) ?? false;
-    if (hadPending) {
-      _syncStatus = SyncStatus.pending;
-    }
-
-    // 6. Arrancar listener reactivo y sincronizar con Firestore
-    _loaded = true;
-    _initAuthListener();
-    if (fbUser != null) {
-      if (hadPending) {
-        // Los datos del dispositivo son más recientes que los de la nube:
-        // subimos los datos locales pendientes en vez de sobreescribirlos
-        retryPendingSync();
-      } else {
-        _loadUserProfileFromFirestore(fbUser.uid);
-      }
-    }
-
-    notifyListeners();
+    _authSubscription ??= _auth.changes.listen((user) {
+      unawaited(_acceptSession(user));
+    });
+    await _acceptSession(_auth.current);
   }
 
-  String _newLocalId() {
-    final r = Random.secure();
-    return List.generate(16, (_) => r.nextInt(16).toRadixString(16)).join();
-  }
-
-  /// Devuelve la clave de SharedPreferences prefijada con el UID del usuario
-  /// activo, aislando sus datos de los de cualquier otro usuario en el mismo
-  /// dispositivo.
-  String _uk(String key) {
-    final id = _localUserId.isNotEmpty ? _localUserId : 'anon';
-    return '${id}_$key';
-  }
-
-  /// Resetea todo el estado en memoria al estado inicial (sin datos de usuario).
-  /// Se invoca al cerrar sesión o antes de cargar los datos de otro usuario.
-  void _resetMemoryState() {
+  Future<void> _acceptSession(AccountIdentity? user, {bool force = false}) {
+    if (!force && _sessionInitialized && user?.uid == _account?.uid)
+      return _transition;
+    _sessionInitialized = true;
+    final epoch = ++_epoch;
+    _saveGeneration = 0;
+    _saveQueue = Future<void>.value();
+    _account = user;
+    _accountPrefs = null;
     _profile = Profile();
     _onboarded = false;
+    _themeMode = ThemeMode.system;
+    _units = UnitSystem.metric;
+    _profileSyncState = SyncState.idle;
     _logs.clear();
     _weights.clear();
-    _weekPlan = null;
     _exerciseWeights.clear();
-    _isTrainer = false;
+    _weekPlan = null;
     _groupId = null;
     _groupCode = null;
-    _sessionEmail = null;
-    _syncStatus = SyncStatus.synced;
-    _syncError = null;
+    _isTrainer = false;
+    _localUserId = user?.uid ?? '';
+    _workoutReminderOn = false;
+    _waterReminderOn = false;
+    _workoutHour = 18;
+    _workoutMinute = 0;
+    _loaded = false;
+    _sessionError = null;
+    notifyListeners();
+    return _transition = _restoreAccount(user, epoch);
   }
 
-  /// Carga desde SharedPreferences los datos específicos del usuario [uid].
-  /// Al cambiar de cuenta se llama primero a [_resetMemoryState] y luego a éste.
-  Future<void> _loadUserDataFromPrefs(String uid) async {
-    final p = await SharedPreferences.getInstance();
-    final prefix = uid.isNotEmpty ? uid : 'anon';
-    String uk(String key) => '${prefix}_$key';
+  Future<void> _restoreAccount(AccountIdentity? user, int epoch) async {
+    try {
+      await _updateReminders(cancelOnly: true);
+      if (epoch != _epoch) return;
+      if (user != null) {
+        final storage = await SharedPreferences.getInstance();
+        if (epoch != _epoch) return;
+        final p = AccountPreferences(storage, user.uid);
+        _accountPrefs = p;
+        _readAccountCache(p);
+        await _runMigrationIfNeeded(p, user.uid);
+        final hasPending = p.getBool(_kPendingWrite) ?? false;
+        if (!hasPending) {
+          // Sin escritura pendiente: el remoto es la fuente de verdad.
+          final remote = await _profiles.loadOrCreate(user);
+          if (epoch != _epoch) return;
+          _profile = remote.profile;
+          _onboarded = remote.onboarded;
+          _isTrainer = remote.trainer || (p.getBool(_kIsTrainer) ?? false);
+          await p.setString(_kProfile, _profile.toJson());
+          await p.setBool(_kOnboarded, remote.onboarded);
+        } else {
+          // Hay un borrador pendiente de confirmar: no sobreescribir con remoto.
+          // El perfil ya se cargó desde caché en _readAccountCache.
+          // Intentar sincronizar el pendiente.
+          _profileSyncState = SyncState.pending;
+          final uid2 = user.uid;
+          final snap = _profile.copy();
+          final ob = _onboarded;
+          // Captura generación y slot de cola antes del primer await.
+          // Si el usuario edita mientras el reintento está en vuelo,
+          // _saveRemoteProfile incrementará _saveGeneration; este reintento
+          // detectará que ya no es el más reciente y cederá sin escribir.
+          final myRetryGen = _saveGeneration;
+          final priorRetry = _saveQueue;
+          final retrySlot = Completer<void>();
+          // Error suprimido en la cola para no contaminar el Zone si no hay
+          // guardado posterior que lo observe.
+          _saveQueue = retrySlot.future.catchError((_) {});
+          try {
+            final remote = await _profiles.loadOrCreate(user);
+            if (epoch != _epoch) {
+              retrySlot.complete();
+              return;
+            }
+            _isTrainer = remote.trainer || (p.getBool(_kIsTrainer) ?? false);
+            // Espera a cualquier guardado anterior antes de escribir.
+            await priorRetry;
+            if (epoch != _epoch || myRetryGen != _saveGeneration) {
+              retrySlot.complete();
+              return;
+            }
+            // Reintenta enviar el borrador al servidor.
+            await _profiles.save(uid2, snap, onboarded: ob);
+            retrySlot.complete();
+            if (epoch != _epoch || myRetryGen != _saveGeneration) return;
+            await p.remove(_kPendingWrite);
+            _profileSyncState = SyncState.confirmed;
+          } catch (e) {
+            if (!retrySlot.isCompleted) retrySlot.completeError(e);
+            if (epoch == _epoch) _profileSyncState = SyncState.failed;
+          }
+        }
+        if (epoch == _epoch) await _updateReminders();
+      }
+    } catch (_) {
+      if (epoch != _epoch) return;
+      _sessionError =
+          'No pudimos recuperar tu perfil. Revisa la conexión y vuelve a intentar.';
+    } finally {
+      if (epoch == _epoch) {
+        _loaded = true;
+        notifyListeners();
+      }
+    }
+  }
 
-    final pj = p.getString(uk(_kProfile));
-    _profile = pj != null ? Profile.fromJson(pj) : Profile();
-    _onboarded = p.getBool(uk(_kOnboarded)) ?? false;
+  Future<void> retryProfile() => _acceptSession(_auth.current, force: true);
 
+  void _readAccountCache(AccountPreferences p) {
+    final pj = p.getString(_kProfile);
+    if (pj != null) _profile = Profile.fromJson(pj);
+    _onboarded = p.getBool(_kOnboarded) ?? false;
+    _themeMode = ThemeMode.values[(p.getInt(_kTheme) ?? 0).clamp(0, 2)];
+    _units = UnitSystem.values[(p.getInt(_kUnits) ?? 0).clamp(0, UnitSystem.values.length - 1)];
     _logs
       ..clear()
       ..addEntries(
-        (p.getStringList(uk(_kLogs)) ?? [])
+        (p.getStringList(_kLogs) ?? [])
             .map(DayLog.fromJson)
             .map((l) => MapEntry(l.dateKey, l)),
       );
-
     _weights
       ..clear()
-      ..addAll(
-        (p.getStringList(uk(_kWeights)) ?? []).map(WeightEntry.fromJson),
-      );
+      ..addAll((p.getStringList(_kWeights) ?? []).map(WeightEntry.fromJson));
     _weights.sort((a, b) => a.date.compareTo(b.date));
-
-    _workoutReminderOn = p.getBool(uk(_kWorkoutReminder)) ?? false;
-    _workoutHour = p.getInt(uk(_kWorkoutHour)) ?? 18;
-    _workoutMinute = p.getInt(uk(_kWorkoutMinute)) ?? 0;
-    _waterReminderOn = p.getBool(uk(_kWaterReminder)) ?? false;
-
-    final wpj = p.getString(uk(_kWeekPlan));
+    _workoutReminderOn = p.getBool(_kWorkoutReminder) ?? false;
+    _workoutHour = p.getInt(_kWorkoutHour) ?? 18;
+    _workoutMinute = p.getInt(_kWorkoutMinute) ?? 0;
+    _waterReminderOn = p.getBool(_kWaterReminder) ?? false;
+    final wpj = p.getString(_kWeekPlan);
     _weekPlan = wpj != null ? WeekPlan.fromJson(wpj) : null;
-
-    final ewj = p.getString(uk(_kExerciseWeights));
+    final ewj = p.getString(_kExerciseWeights);
     _exerciseWeights.clear();
     if (ewj != null) {
       final decoded = jsonDecode(ewj) as Map<String, dynamic>;
@@ -277,131 +275,22 @@ class AppStore extends ChangeNotifier {
             .toList();
       });
     }
-
-    _isTrainer = p.getBool(uk(_kIsTrainer)) ?? false;
-    _groupId = p.getString(uk(_kGroupId));
-    _groupCode = p.getString(uk(_kGroupCode));
+    _groupId = p.getString(_kGroupId);
+    _groupCode = p.getString(_kGroupCode);
+    _isTrainer = p.getBool(_kIsTrainer) ?? false;
   }
 
-  /// Migra los datos locales generados durante una sesión anónima/invitada hacia
-  /// el UID de la nueva cuenta [toUid].
-  /// Esta migración se realiza únicamente cuando la propiedad de los datos es CIERTA
-  /// (es decir, el usuario configuró sus datos en este dispositivo y procede a registrarse).
-  Future<void> migrateLocalDataToUser(String fromId, String toUid) async {
-    if (fromId.isEmpty || fromId == toUid) return;
-    final p = await SharedPreferences.getInstance();
-    for (final key in _kUserKeys) {
-      final oldKey = '${fromId}_$key';
-      final newKey = '${toUid}_$key';
-
-      if (!p.containsKey(oldKey)) continue;
-
-      if (key == _kLogs || key == _kWeights) {
-        final val = p.getStringList(oldKey);
-        if (val != null) {
-          await p.setStringList(newKey, val);
-          await p.remove(oldKey);
-        }
-      } else if (key == _kOnboarded ||
-          key == _kWorkoutReminder ||
-          key == _kWaterReminder ||
-          key == _kIsTrainer) {
-        final val = p.getBool(oldKey);
-        if (val != null) {
-          await p.setBool(newKey, val);
-          await p.remove(oldKey);
-        }
-      } else if (key == _kWorkoutHour || key == _kWorkoutMinute) {
-        final val = p.getInt(oldKey);
-        if (val != null) {
-          await p.setInt(newKey, val);
-          await p.remove(oldKey);
-        }
-      } else {
-        final val = p.getString(oldKey);
-        if (val != null) {
-          await p.setString(newKey, val);
-          await p.remove(oldKey);
-        }
-      }
-    }
-    await p.setString(_kLocalUserId, toUid);
-  }
-
-  /// Limpia los datos locales huérfanos asociados a un UID específico.
-  /// Se usa para descartar datos anónimos cuya propiedad sea incierta (por ejemplo,
-  /// al iniciar sesión con una cuenta existente diferente).
-  Future<void> clearLocalUserData(String uid) async {
-    if (uid.isEmpty) return;
-    final p = await SharedPreferences.getInstance();
-    for (final key in _kUserKeys) {
-      await p.remove('${uid}_$key');
-    }
-  }
-
-  /// Migra datos legacy almacenados sin prefijo de UID al espacio de nombres del usuario [toUid].
-  /// Solo se invoca si la sesión anterior del dispositivo coincide de manera cierta con [targetEmail].
-  Future<void> migrateLegacyUnprefixedDataToUser(
-    String toUid, {
-    required String targetEmail,
-  }) async {
-    if (toUid.isEmpty) return;
-    final p = await SharedPreferences.getInstance();
-    final savedEmail = p.getString(_kSession);
-    if (savedEmail == null ||
-        savedEmail.toLowerCase() != targetEmail.toLowerCase()) {
-      // Propiedad incierta: no migrar automáticamente datos que podrían pertenecer a otro usuario
-      return;
-    }
-
-    for (final key in _kUserKeys) {
-      final oldKey = key; // sin prefijo
-      final newKey = '${toUid}_$key';
-
-      if (!p.containsKey(oldKey)) continue;
-
-      // Si la cuenta ya tiene datos propios en newKey, preservarlos y solo limpiar la clave legacy
-      if (p.containsKey(newKey)) {
-        await p.remove(oldKey);
-        continue;
-      }
-
-      if (key == _kLogs || key == _kWeights) {
-        final val = p.getStringList(oldKey);
-        if (val != null) {
-          await p.setStringList(newKey, val);
-          await p.remove(oldKey);
-        }
-      } else if (key == _kOnboarded ||
-          key == _kWorkoutReminder ||
-          key == _kWaterReminder ||
-          key == _kIsTrainer) {
-        final val = p.getBool(oldKey);
-        if (val != null) {
-          await p.setBool(newKey, val);
-          await p.remove(oldKey);
-        }
-      } else if (key == _kWorkoutHour || key == _kWorkoutMinute) {
-        final val = p.getInt(oldKey);
-        if (val != null) {
-          await p.setInt(newKey, val);
-          await p.remove(oldKey);
-        }
-      } else {
-        final val = p.getString(oldKey);
-        if (val != null) {
-          await p.setString(newKey, val);
-          await p.remove(oldKey);
-        }
-      }
-    }
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   // ── Rol entrenador / grupos ──────────────────────────────────────────────
-  Future<void> setIsTrainer(bool v) async {
-    _isTrainer = v;
+  Future<void> setIsTrainer(bool value) async {
+    _isTrainer = value;
     notifyListeners();
-    await _prefs((p) => p.setBool(_uk(_kIsTrainer), v));
+    await _prefs((p) => p.setBool(_kIsTrainer, value));
   }
 
   Future<void> setMyGroup(String groupId, String code) async {
@@ -409,8 +298,8 @@ class AppStore extends ChangeNotifier {
     _groupCode = code;
     notifyListeners();
     await _prefs((p) async {
-      await p.setString(_uk(_kGroupId), groupId);
-      await p.setString(_uk(_kGroupCode), code);
+      await p.setString(_kGroupId, groupId);
+      await p.setString(_kGroupCode, code);
     });
   }
 
@@ -419,8 +308,8 @@ class AppStore extends ChangeNotifier {
     _groupCode = null;
     notifyListeners();
     await _prefs((p) async {
-      await p.remove(_uk(_kGroupId));
-      await p.remove(_uk(_kGroupCode));
+      await p.remove(_kGroupId);
+      await p.remove(_kGroupCode);
     });
   }
 
@@ -483,7 +372,7 @@ class AppStore extends ChangeNotifier {
         (name, list) => MapEntry(name, list.map((e) => e.toMap()).toList()),
       ),
     );
-    await _prefs((p) => p.setString(_uk(_kExerciseWeights), encoded));
+    await _prefs((p) => p.setString(_kExerciseWeights, encoded));
   }
 
   /// Progresión automática: compara los últimos 2 registros de peso de un
@@ -518,594 +407,227 @@ class AppStore extends ChangeNotifier {
       kg == kg.roundToDouble() ? kg.toInt().toString() : kg.toStringAsFixed(1);
 
   // ── Recordatorios ────────────────────────────────────────────────────────
+  Future<void> _updateReminders({bool cancelOnly = false}) {
+    final epoch = _epoch;
+    final workout = !cancelOnly && _workoutReminderOn;
+    final water = !cancelOnly && _waterReminderOn;
+    final hour = _workoutHour;
+    final minute = _workoutMinute;
+    // Serialize platform calls: a previous account cannot schedule after logout.
+    return _reminderTransition = _reminderTransition.catchError((_) {}).then((
+      _,
+    ) async {
+      if (epoch != _epoch) return;
+      await _clearReminders();
+      if (epoch != _epoch) return;
+      if (workout) await Notifications.scheduleWorkout(hour, minute);
+      if (epoch != _epoch) return;
+      if (water) await Notifications.scheduleWater();
+    });
+  }
+
   Future<void> setWorkoutReminder(bool on, {int? hour, int? minute}) async {
+    final epoch = _epoch;
     _workoutReminderOn = on;
     if (hour != null) _workoutHour = hour;
     if (minute != null) _workoutMinute = minute;
+    final savedHour = _workoutHour;
+    final savedMinute = _workoutMinute;
     notifyListeners();
     await _prefs((p) async {
-      await p.setBool(_uk(_kWorkoutReminder), on);
-      await p.setInt(_uk(_kWorkoutHour), _workoutHour);
-      await p.setInt(_uk(_kWorkoutMinute), _workoutMinute);
+      await p.setBool(_kWorkoutReminder, on);
+      await p.setInt(_kWorkoutHour, savedHour);
+      await p.setInt(_kWorkoutMinute, savedMinute);
     });
-    if (on) {
-      await Notifications.scheduleWorkout(_workoutHour, _workoutMinute);
-    } else {
-      await Notifications.cancelWorkout();
-    }
+    if (epoch == _epoch) await _updateReminders();
   }
 
   Future<void> setWaterReminder(bool on) async {
+    final epoch = _epoch;
     _waterReminderOn = on;
     notifyListeners();
-    await _prefs((p) => p.setBool(_uk(_kWaterReminder), on));
-    if (on) {
-      await Notifications.scheduleWater();
-    } else {
-      await Notifications.cancelWater();
-    }
+    await _prefs((p) => p.setBool(_kWaterReminder, on));
+    if (epoch == _epoch) await _updateReminders();
   }
 
   // ── Plan semanal (IA) ────────────────────────────────────────────────────
   Future<void> saveWeekPlan(WeekPlan plan) async {
     _weekPlan = plan;
     notifyListeners();
-    await _prefs((p) => p.setString(_uk(_kWeekPlan), plan.toJson()));
+    await _prefs((p) => p.setString(_kWeekPlan, plan.toJson()));
   }
 
-  bool _validEmail(String e) =>
-      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e.trim());
-
-  /// Registra una cuenta nueva con Firebase Authentication.
-  /// Devuelve null si todo ok, o un mensaje de error descriptivo en español.
   Future<String?> register(String name, String email, String password) async {
-    name = name.trim();
-    email = email.trim().toLowerCase();
-    if (name.isEmpty) return 'Escribe tu nombre.';
-    if (!_validEmail(email)) return 'Ese correo no parece válido.';
-    if (password.length < 6) {
-      return 'La contraseña debe tener al menos 6 caracteres.';
-    }
-
-    _authActionInProgress = true;
-    final wasAnonymous = _sessionEmail == null;
-    final oldLocalId = _localUserId;
-
+    if (name.trim().isEmpty) return 'Escribe tu nombre.';
     try {
-      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final user = cred.user;
-      if (user != null) {
-        await user.updateDisplayName(name);
-        _localUserId = user.uid;
-        _sessionEmail = user.email ?? email;
-        _profile.name = name;
-
-        // Propiedad cierta: migrar datos locales del onboarding anónimo al nuevo usuario
-        if (wasAnonymous && oldLocalId.isNotEmpty && oldLocalId != user.uid) {
-          await migrateLocalDataToUser(oldLocalId, user.uid);
-        }
-
-        // Sincronizar en Firestore tanto datos básicos (/users/{uid}) como privados (/users/{uid}/private/health_profile)
-        await _syncProfileToFirestore();
-      }
-
-      notifyListeners();
-      await _prefs((p) async {
-        await p.setString(_kSession, email); // global
-        await p.setString(_kLocalUserId, _localUserId); // global
-        await p.setString(_uk(_kProfile), _profile.toJson()); // por usuario
-      });
+      await _auth.register(name.trim(), email.trim(), password);
+      await _acceptSession(_auth.current);
       return null;
-    } on FirebaseAuthException catch (e) {
-      return _authErrorMessage(e);
-    } catch (e) {
-      return 'No se pudo crear la cuenta: $e';
-    } finally {
-      _authActionInProgress = false;
+    } catch (error) {
+      return accountError(error);
     }
   }
 
-  /// Inicia sesión con correo y contraseña en Firebase Authentication.
-  /// Devuelve null si ok, o un mensaje de error descriptivo en español.
   Future<String?> login(String email, String password) async {
-    email = email.trim().toLowerCase();
-    if (!_validEmail(email)) return 'Ese correo no parece válido.';
-    if (password.isEmpty) return 'Ingresa tu contraseña.';
-
-    _authActionInProgress = true;
-    final wasAnonymous = _sessionEmail == null;
-    final oldLocalId = _localUserId;
-
     try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      final user = cred.user;
-      if (user != null) {
-        // Al iniciar sesión en cuenta existente, la propiedad de los datos locales anónimos
-        // previos es INCIERTA. Evitamos trasladarlos automáticamente para no contaminar
-        // ni sobreescribir la cuenta existente con información ajena o de pruebas.
-        _resetMemoryState();
-        _localUserId = user.uid;
-        _sessionEmail = user.email ?? email;
-
-        // Limpiar datos anónimos huérfanos con propiedad incierta
-        if (wasAnonymous && oldLocalId.isNotEmpty && oldLocalId != user.uid) {
-          await clearLocalUserData(oldLocalId);
-        }
-
-        // 1. Cargar datos locales existentes de este usuario
-        await _loadUserDataFromPrefs(user.uid);
-
-        // 2. Migrar datos legacy sin prefijo solo si la sesión previa del dispositivo coincide con certeza
-        await migrateLegacyUnprefixedDataToUser(user.uid, targetEmail: email);
-
-        // 3. Cargar perfil desde Firestore (fuente de verdad en la nube)
-        await _loadUserProfileFromFirestore(user.uid);
-
-        if (user.displayName != null &&
-            user.displayName!.isNotEmpty &&
-            _profile.name.isEmpty) {
-          _profile.name = user.displayName!;
-        }
-      }
-
-      notifyListeners();
-      await _prefs((p) async {
-        await p.setString(_kSession, email); // global
-        await p.setString(_kLocalUserId, _localUserId); // global
-        await p.setString(_uk(_kProfile), _profile.toJson()); // por usuario
-      });
+      await _auth.signIn(email.trim(), password);
+      await _acceptSession(_auth.current);
       return null;
-    } on FirebaseAuthException catch (e) {
-      return _authErrorMessage(e);
-    } catch (e) {
-      return 'No se pudo iniciar sesión: $e';
-    } finally {
-      _authActionInProgress = false;
+    } catch (error) {
+      return accountError(error);
     }
   }
 
-  /// Envía correo de recuperación de contraseña con Firebase Authentication.
-  Future<String?> sendPasswordReset(String email) async {
-    email = email.trim().toLowerCase();
-    if (!_validEmail(email)) return 'Ingresa un correo electrónico válido.';
+  Future<String?> loginWithGoogle() async {
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      await _auth.signInWithGoogle();
+      await _acceptSession(_auth.current);
       return null;
-    } on FirebaseAuthException catch (e) {
-      return _authErrorMessage(e);
-    } catch (e) {
-      return 'Error al enviar recuperación: $e';
-    }
-  }
-
-
-  /// Mapea los códigos de error de FirebaseAuth a mensajes claros en español.
-  String _authErrorMessage(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'email-already-in-use':
-        return 'Ya existe una cuenta registrada con este correo.';
-      case 'invalid-email':
-        return 'El formato del correo electrónico no es válido.';
-      case 'weak-password':
-        return 'La contraseña es muy débil (mínimo 6 caracteres).';
-      case 'user-not-found':
-        return 'No existe ninguna cuenta asociada a este correo.';
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'Correo o contraseña incorrectos.';
-      case 'user-disabled':
-        return 'Esta cuenta ha sido deshabilitada por el administrador.';
-      case 'too-many-requests':
-        return 'Demasiados intentos fallidos. Inténtalo más tarde.';
-      case 'network-request-failed':
-        return 'Error de conexión. Revisa tu conexión a internet.';
-      case 'operation-not-allowed':
-        return 'El acceso por correo/contraseña no está habilitado en Firebase Console.';
-      default:
-        return e.message ?? 'Error de autenticación (${e.code}).';
-    }
-  }
-
-  /// Inicia/registra sesión con un proveedor externo (ej. Google) y sincroniza con Firestore.
-  Future<void> loginWithProvider(
-    String email,
-    String name, {
-    String provider = 'google',
-  }) async {
-    email = email.trim().toLowerCase();
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return; // Seguridad: no continuar sin usuario autenticado
-    final uid = user.uid;
-
-    _authActionInProgress = true;
-    final wasAnonymous = _sessionEmail == null;
-    final oldLocalId = _localUserId;
-
-    final isNew =
-        user.metadata.creationTime != null &&
-        user.metadata.lastSignInTime != null &&
-        user.metadata.lastSignInTime!
-                .difference(user.metadata.creationTime!)
-                .inSeconds
-                .abs() <
-            30;
-
-    try {
-      if (isNew) {
-        // Usuario nuevo creado con proveedor: propiedad cierta de los datos del onboarding
-        _localUserId = uid;
-        _sessionEmail = user.email ?? email;
-        if (_profile.name.isEmpty) _profile.name = name;
-
-        if (wasAnonymous && oldLocalId.isNotEmpty && oldLocalId != uid) {
-          await migrateLocalDataToUser(oldLocalId, uid);
-        }
-
-        // Sincronizar documento principal y privado en Firestore
-        await _syncProfileToFirestore();
-      } else {
-        // Usuario existente: propiedad incierta de los datos anónimos locales.
-        // No trasladar automáticamente; cargar datos legítimos de la cuenta existente.
-        _resetMemoryState();
-        _localUserId = uid;
-        _sessionEmail = user.email ?? email;
-
-        if (wasAnonymous && oldLocalId.isNotEmpty && oldLocalId != uid) {
-          await clearLocalUserData(oldLocalId);
-        }
-
-        await _loadUserDataFromPrefs(uid);
-        await migrateLegacyUnprefixedDataToUser(uid, targetEmail: email);
-        await _loadUserProfileFromFirestore(uid);
-
-        if (_profile.name.isEmpty) _profile.name = name;
-      }
-
-      notifyListeners();
-      await _prefs((p) async {
-        await p.setString(_kSession, _sessionEmail!); // global
-        await p.setString(_kLocalUserId, _localUserId); // global
-        await p.setString(_uk(_kProfile), _profile.toJson()); // por usuario
-      });
-    } finally {
-      _authActionInProgress = false;
+    } catch (error) {
+      return accountError(error);
     }
   }
 
   Future<void> logout() async {
-    _authActionInProgress = true;
-    try {
-      await FirebaseAuth.instance.signOut();
-    } catch (_) {}
-    try {
-      await GoogleSignIn().signOut();
-    } catch (_) {}
-    // Limpiar estado en memoria; los datos del usuario quedan en SharedPreferences
-    // bajo su UID para que pueda recuperarlos si vuelve a iniciar sesión.
-    _resetMemoryState();
-    final p = await SharedPreferences.getInstance();
-    await p.remove(_kSession);
-
-    // Generar un nuevo ID anónimo para evitar que un futuro invitado o sesión anónima
-    // acceda o contamine los datos del usuario que acaba de cerrar sesión.
-    _localUserId = _newLocalId();
-    await p.setString(_kLocalUserId, _localUserId);
-
-    notifyListeners();
-    _authActionInProgress = false;
+    await _auth.signOut();
+    await _acceptSession(null);
   }
 
-  bool _authListenerInitialized = false;
+  /// Paso 3 del Sprint 2: migración segura e idempotente.
+  ///
+  /// Versión actual: 1.
+  /// Lógica: registra que ya se ejecutó la verificación para este UID.
+  /// No migra datos de propietario incierto (claves antiguas `brio_*`):
+  /// esas claves se conservan sin tocar hasta que el propietario sea
+  /// verificado fuera de la app. Este mecanismo garantiza idempotencia:
+  /// si se interrumpe y se reanuda, no duplica datos.
+  static const int _migrationCurrentVersion = 1;
 
-  /// Escucha reactivamente cambios en el estado de autenticación de Firebase.
-  /// Detecta cambio de usuario y carga los datos correctos para cada cuenta.
-  void _initAuthListener() {
-    if (_authListenerInitialized) return;
-    _authListenerInitialized = true;
-    try {
-      FirebaseAuth.instance.authStateChanges().listen((User? user) async {
-        if (_authActionInProgress) return;
-        if (user != null) {
-          final isNewUser = _localUserId != user.uid;
-          if (isNewUser) {
-            // Cambio de cuenta: limpiar estado anterior y cargar datos del nuevo usuario
-            _resetMemoryState();
-            _localUserId = user.uid;
-            await _loadUserDataFromPrefs(user.uid);
-          }
-          _sessionEmail = user.email;
-          _localUserId = user.uid;
-          if (user.displayName != null &&
-              user.displayName!.isNotEmpty &&
-              _profile.name.isEmpty) {
-            _profile.name = user.displayName!;
-          }
-          // Sincroniza con Firestore solo si NO hay cambios pendientes en este dispositivo
-          if (!hasPendingSync) {
-            await _loadUserProfileFromFirestore(user.uid);
-          } else {
-            await retryPendingSync();
-          }
-        } else {
-          // Sin sesión: limpiar todo el estado en memoria y generar nuevo ID anónimo
-          _resetMemoryState();
-          final p = await SharedPreferences.getInstance();
-          await p.remove(_kSession);
-          _localUserId = _newLocalId();
-          await p.setString(_kLocalUserId, _localUserId);
-        }
-        notifyListeners();
-      });
-    } catch (_) {
-      // Firebase no está inicializado (ej. entorno de tests unitarios)
-    }
+  Future<void> _runMigrationIfNeeded(AccountPreferences p, String uid) async {
+    final done = p.getInt(_kMigrationVersion) ?? 0;
+    if (done >= _migrationCurrentVersion) return;
+
+    // Verificación: ¿hay claves antiguas `brio_*` sin UID asociado?
+    // Por política del Sprint 2, no se asignan al usuario actual porque
+    // no es posible verificar la propiedad con certeza.
+    // Se marca la migración como completada sin mover datos ambiguos.
+    await p.setInt(_kMigrationVersion, _migrationCurrentVersion);
   }
 
-  /// Carga el perfil del usuario desde Firestore si existe.
-  /// Ruta: users/{uid} y users/{uid}/private/health_profile
-  Future<void> _loadUserProfileFromFirestore(String uid) async {
-    // Si hay guardado pendiente en este dispositivo, los datos locales son
-    // más recientes: NO sobreescribir con datos desactualizados de la nube.
-    if (hasPendingSync) {
-      debugPrint('[Firestore] Omitiendo carga remota para $uid: hay guardado local pendiente.');
-      return;
-    }
-
-    _isProfileLoading = true;
-    _profileLoadError = null;
-    notifyListeners();
-
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get()
-          .timeout(const Duration(seconds: 8));
-      final healthDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('private')
-          .doc('health_profile')
-          .get()
-          .timeout(const Duration(seconds: 8));
-
-      // Doble comprobación: si mientras respondía la red se produjo un guardado local
-      if (hasPendingSync) {
-        debugPrint('[Firestore] Cancelando aplicación de perfil remoto para $uid: hay guardado pendiente.');
-        return;
-      }
-
-      if (userDoc.exists && userDoc.data() != null) {
-        final uData = userDoc.data()!;
-        final nameStr = uData['name'] as String?;
-        if (nameStr != null && nameStr.trim().isNotEmpty) {
-          _profile.name = nameStr;
-        }
-        if (uData['goal'] != null) {
-          _profile.goal =
-              Goal.values[((uData['goal'] as num).toInt()).clamp(0, 3)];
-        }
-        if (uData['level'] != null) {
-          _profile.level =
-              Level.values[((uData['level'] as num).toInt()).clamp(0, 2)];
-        }
-        if (uData['daysPerWeek'] != null) {
-          _profile.daysPerWeek =
-              ((uData['daysPerWeek'] as num).toInt()).clamp(1, 7);
-        }
-        if (uData['hasGym'] != null) {
-          _profile.hasGym = uData['hasGym'] as bool;
-        }
-        if (uData['onboarded'] != null) {
-          _onboarded = uData['onboarded'] as bool;
-        }
-      }
-
-      if (healthDoc.exists && healthDoc.data() != null) {
-        final hData = healthDoc.data()!;
-        if (hData['age'] != null) {
-          _profile.age = ((hData['age'] as num).toInt()).clamp(12, 120);
-        }
-        if (hData['heightCm'] != null) {
-          _profile.heightCm =
-              ((hData['heightCm'] as num).toDouble()).clamp(80, 250);
-        }
-        if (hData['weightKg'] != null) {
-          _profile.weightKg =
-              ((hData['weightKg'] as num).toDouble()).clamp(20, 500);
-        }
-        if (hData['targetWeightKg'] != null) {
-          _profile.targetWeightKg =
-              ((hData['targetWeightKg'] as num).toDouble()).clamp(20, 500);
-        }
-        if (hData['conditions'] != null) {
-          _profile.conditions = ((hData['conditions'] as List?) ?? [])
-              .map((item) {
-                if (item is int) {
-                  return HealthCondition.values[item.clamp(
-                    0,
-                    HealthCondition.values.length - 1,
-                  )];
-                }
-                final str = item.toString();
-                return HealthCondition.values.firstWhere(
-                  (c) => c.name == str,
-                  orElse: () => HealthCondition.diabetes,
-                );
-              })
-              .toSet()
-              .toList();
-        }
-        if (hData['allergies'] != null) {
-          _profile.allergies = ((hData['allergies'] as List?) ?? [])
-              .map((item) {
-                if (item is int) {
-                  return Allergy.values[item.clamp(0, Allergy.values.length - 1)];
-                }
-                final str = item.toString();
-                return Allergy.values.firstWhere(
-                  (a) => a.name == str,
-                  orElse: () => Allergy.lactosa,
-                );
-              })
-              .toSet()
-              .toList();
-        }
-      }
-
-      if (userDoc.exists || healthDoc.exists) {
-        await _prefs((p) async {
-          await p.setString(_uk(_kProfile), _profile.toJson());
-          await p.setBool(_uk(_kOnboarded), _onboarded);
-        });
-      }
-      _profileLoadError = null;
-    } catch (e) {
-      debugPrint('[Firestore] Error al cargar perfil de $uid: $e');
-      _profileLoadError =
-          'No se pudo sincronizar el perfil con la nube. Mostrando datos locales.';
-    } finally {
-      _isProfileLoading = false;
-      notifyListeners();
-    }
-  }
-
-  /// Recarga el perfil desde Firestore con estados reactivos de carga y error (#123).
-  Future<void> reloadProfileFromCloud() async {
-    final uid = userId;
-    if (uid.isNotEmpty) {
-      await _loadUserProfileFromFirestore(uid);
-    }
-  }
-
-  /// Sincroniza el perfil actual con la colección users y su subcolección private/health_profile.
-  /// Cumple estrictamente con las reglas validBasic y validHealth.
-  /// Retorna SyncStatus.synced si se confirmó en la nube, o SyncStatus.failed si no hubo conexión.
-  Future<SyncStatus> _syncProfileToFirestore() async {
-    final uid = userId;
-    if (uid.isEmpty) {
-      _syncStatus = SyncStatus.synced;
-      _syncError = null;
-      return SyncStatus.synced;
-    }
-
-    _syncStatus = SyncStatus.pending;
-    notifyListeners();
-
-    try {
-      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
-      final userSnap = await userRef.get().timeout(const Duration(seconds: 8));
-
-      final displayName = _profile.name.isNotEmpty ? _profile.name : 'Usuario';
-      final basicData = <String, dynamic>{
-        'name': displayName.length > 120
-            ? displayName.substring(0, 120)
-            : displayName,
-        'goal': _profile.goal.index.clamp(0, 3),
-        'level': _profile.level.index.clamp(0, 2),
-        'daysPerWeek': _profile.daysPerWeek.clamp(1, 7),
-        'hasGym': _profile.hasGym,
-        'onboarded': _onboarded,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (!userSnap.exists) {
-        basicData['createdAt'] = FieldValue.serverTimestamp();
-      } else {
-        basicData['createdAt'] =
-            userSnap.data()?['createdAt'] ?? FieldValue.serverTimestamp();
-      }
-
-      // 1. Guardar o actualizar documento principal users/{uid} (idempotente)
-      await userRef.set(basicData).timeout(const Duration(seconds: 8));
-
-      // 2. Guardar subcolección privada users/{uid}/private/health_profile (idempotente)
-      // Cumple validHealth con nombres legibles en condiciones y alergias
-      final healthRef = userRef.collection('private').doc('health_profile');
-      final healthData = <String, dynamic>{
-        'age': _profile.age.clamp(12, 120),
-        'heightCm': _profile.heightCm.clamp(80.0, 250.0),
-        'weightKg': _profile.weightKg.clamp(20.0, 500.0),
-        'targetWeightKg': _profile.targetWeightKg.clamp(20.0, 500.0),
-        'conditions': _profile.conditions.map((c) => c.name).toSet().toList(),
-        'allergies': _profile.allergies.map((a) => a.name).toSet().toList(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await healthRef.set(healthData).timeout(const Duration(seconds: 8));
-
-      // Confirmado exitosamente en la nube
-      _syncStatus = SyncStatus.synced;
-      _syncError = null;
-      await _prefs((p) => p.remove(_uk(_kPendingSync)));
-      notifyListeners();
-      return SyncStatus.synced;
-    } catch (e) {
-      debugPrint('[Firestore] Error al sincronizar perfil de $uid: $e');
-      _syncStatus = SyncStatus.failed;
-      _syncError = 'Sin conexión a internet. Guardado en este dispositivo.';
-      await _prefs((p) => p.setBool(_uk(_kPendingSync), true));
-      notifyListeners();
-      return SyncStatus.failed;
-    }
-  }
-
-  /// Reintenta sincronizar con la nube los datos guardados localmente.
-  /// Es idempotente: las escrituras a users/{uid} y private/health_profile
-  /// actualizan los mismos documentos deterministas sin duplicar registros.
-  Future<bool> retryPendingSync() async {
-    final status = await _syncProfileToFirestore();
-    return status == SyncStatus.synced;
-  }
-
-  Future<void> _prefs(Future<void> Function(SharedPreferences p) fn) async {
-    final p = await SharedPreferences.getInstance();
+  Future<void> _prefs(Future<void> Function(AccountPreferences p) fn) async {
+    final p = _accountPrefs;
+    if (p == null || !authed) throw StateError('No hay una sesión lista.');
     await fn(p);
   }
 
   // ── Perfil / onboarding ──────────────────────────────────────────────────
-  Future<SyncStatus> completeOnboarding(Profile profile) async {
-    _profile = profile;
-    _onboarded = true;
-    _syncStatus = SyncStatus.pending;
-    _syncError = null;
-    // Primer registro de peso para arrancar el gráfico.
-    if (_weights.isEmpty) {
-      _weights.add(WeightEntry(DateTime.now(), profile.weightKg));
-    }
-    notifyListeners();
-    await _prefs((p) async {
-      await p.setString(_uk(_kProfile), profile.toJson());
-      await p.setBool(_uk(_kOnboarded), true);
-      await p.setStringList(
-        _uk(_kWeights),
-        _weights.map((e) => e.toJson()).toList(),
-      );
-      await p.setBool(_uk(_kPendingSync), true);
-    });
-    return await _syncProfileToFirestore();
+  Future<void> completeOnboarding(Profile profile) async {
+    await _saveRemoteProfile(profile, onboarded: true);
   }
 
-  Future<SyncStatus> saveProfile(Profile profile) async {
-    _profile = profile;
-    _syncStatus = SyncStatus.pending;
-    _syncError = null;
+  Future<void> saveProfile(Profile profile) async {
+    await _saveRemoteProfile(profile, onboarded: _onboarded);
+  }
+
+  Future<void> _saveRemoteProfile(
+    Profile profile, {
+    required bool onboarded,
+  }) async {
+    final uid = currentUid;
+    final epoch = _epoch;
+    // Captura la generación ANTES de cualquier await, de modo que si otro
+    // guardado comienza mientras éste está en vuelo, myGeneration < _saveGeneration.
+    final myGeneration = ++_saveGeneration;
+    final cache = _accountPrefs;
+    if (uid == null || cache == null || !_loaded || _sessionError != null) {
+      throw StateError('No hay una sesión lista.');
+    }
+    final snapshot = profile.copy();
+
+    // Guarda localmente primero para preservar el borrador ante errores.
+    await cache.setString(_kProfile, snapshot.toJson());
+    await cache.setBool(_kOnboarded, onboarded);
+    // Marca la escritura como pendiente ANTES del intento remoto.
+    // Si la app se reinicia antes de la confirmación, _restoreAccount
+    // detectará el flag y no sobreescribirá el borrador con el remoto.
+    await cache.setBool(_kPendingWrite, true);
+
+    // Verifica epoch después de los awaits de escritura local: la cuenta puede
+    // haber cambiado mientras SharedPreferences escribía.
+    if (epoch != _epoch) throw StateError('La sesión cambió durante el guardado.');
+
+    // Guard rápido: si una edición más nueva ya comenzó durante las escrituras
+    // locales, no hace falta ni entrar en la cola.
+    if (myGeneration != _saveGeneration) return;
+
+    _profileSyncState = SyncState.saving;
     notifyListeners();
 
-    // 1. Guardado local inmediato en SharedPreferences (garantiza que nunca se pierde información)
-    await _prefs((p) async {
-      await p.setString(_uk(_kProfile), profile.toJson());
-      await p.setBool(_uk(_kPendingSync), true);
-    });
+    // Cola de escrituras por sesión: serializa las transacciones Firestore.
+    // Cada guardado encola su Future y espera al anterior antes de escribir.
+    // Al obtener su turno, revalida la generación: si ya hay un guardado
+    // posterior en espera, cede sin enviar datos viejos al servidor.
+    final priorSave = _saveQueue;
+    final mySlot = Completer<void>();
+    // La cola almacena el future con el error ya suprimido: si ningún guardado
+    // posterior llega a esperar, el error no se propaga al Zone. El slot interno
+    // (mySlot) sigue teniendo el error para que el catch a continuación lo reenvíe.
+    _saveQueue = mySlot.future.catchError((_) {});
 
-    // 2. Intentar confirmación en Firestore
-    return await _syncProfileToFirestore();
+    // Espera a que el guardado anterior complete (éxito o error suprimido).
+    await priorSave;
+
+    // Revalidar tras la espera: puede que llegara una edición más nueva.
+    if (epoch != _epoch) {
+      mySlot.complete();
+      throw StateError('La sesión cambió durante el guardado.');
+    }
+    if (myGeneration != _saveGeneration) {
+      // Un guardado más reciente ya ocupa la cola — ceder sin escribir al servidor.
+      mySlot.complete();
+      return;
+    }
+
+    try {
+      await _profiles.save(uid, snapshot, onboarded: onboarded);
+      mySlot.complete();
+    } on StateError catch (e) {
+      // La sesión cambió o el perfil aún no existe en el servidor.
+      mySlot.completeError(e);
+      if (epoch == _epoch) {
+        _profileSyncState = SyncState.failed;
+        notifyListeners();
+      }
+      rethrow;
+    } catch (e) {
+      mySlot.completeError(e);
+      if (epoch == _epoch) {
+        final isPermission = e.toString().contains('PERMISSION_DENIED') ||
+            e.toString().contains('permission-denied');
+        _profileSyncState =
+            isPermission ? SyncState.rejected : SyncState.failed;
+        notifyListeners();
+      }
+      rethrow;
+    }
+
+    if (epoch != _epoch) {
+      throw StateError('La sesión cambió durante el guardado.');
+    }
+
+    if (myGeneration != _saveGeneration) return;
+
+    _profile = snapshot;
+    _onboarded = onboarded;
+    _profileSyncState = SyncState.confirmed;
+    if (_weights.isEmpty && onboarded) {
+      _weights.add(WeightEntry(DateTime.now(), snapshot.weightKg));
+    }
+    final weights = _weights.map((e) => e.toJson()).toList();
+    await cache.setStringList(_kWeights, weights);
+    // Borra el flag de escritura pendiente: el servidor confirmó.
+    await cache.remove(_kPendingWrite);
+    if (epoch == _epoch) notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -1114,11 +636,16 @@ class AppStore extends ChangeNotifier {
     await _prefs((p) => p.setInt(_kTheme, mode.index));
   }
 
-  /// Cambia el sistema de unidades activo y lo persiste en el dispositivo (#124).
-  Future<void> setUnitSystem(UnitSystem system) async {
-    _unitSystem = system;
+  Future<void> setUnits(UnitSystem system) async {
+    _units = system;
     notifyListeners();
-    await _prefs((p) => p.setInt(_kUnitSystem, system.index));
+    await _prefs((p) => p.setInt(_kUnits, system.index));
+  }
+
+  /// Reinicia el estado sync del perfil a idle, por ejemplo tras un reintento.
+  void clearProfileSyncState() {
+    _profileSyncState = SyncState.idle;
+    notifyListeners();
   }
 
   // ── Registros diarios ────────────────────────────────────────────────────
@@ -1133,10 +660,8 @@ class AppStore extends ChangeNotifier {
     _logs[log.dateKey] = log;
     notifyListeners();
     await _prefs(
-      (p) => p.setStringList(
-        _uk(_kLogs),
-        _logs.values.map((e) => e.toJson()).toList(),
-      ),
+      (p) =>
+          p.setStringList(_kLogs, _logs.values.map((e) => e.toJson()).toList()),
     );
   }
 
@@ -1177,6 +702,10 @@ class AppStore extends ChangeNotifier {
 
   // ── Peso ─────────────────────────────────────────────────────────────────
   Future<void> addWeight(double kg) async {
+    final epoch = _epoch;
+    final updated = _profile.copy()..weightKg = kg;
+    await saveProfile(updated);
+    if (epoch != _epoch) throw StateError('La sesión cambió.');
     final k = dayKey(DateTime.now());
     _weights.removeWhere((w) => dayKey(w.date) == k); // 1 registro por día
     _weights.add(WeightEntry(DateTime.now(), kg));
@@ -1185,10 +714,9 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     await _prefs((p) async {
       await p.setStringList(
-        _uk(_kWeights),
+        _kWeights,
         _weights.map((e) => e.toJson()).toList(),
       );
-      await p.setString(_uk(_kProfile), _profile.toJson());
     });
   }
 

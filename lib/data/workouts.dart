@@ -156,20 +156,4 @@ class Workouts {
 
   /// Rutina "de hoy": la primera recomendada para el perfil.
   static Workout todayFor(Profile p) => forProfile(p).first;
-
-  /// Determina si un ejercicio tiene contraindicación o advertencia médica (US39).
-  static bool hasExerciseCaution(Exercise e, Profile p) =>
-      e.avoidConditions.any(p.conditions.contains);
-
-  /// Retorna las condiciones médicas del perfil que contraindican el ejercicio (US39).
-  static List<HealthCondition> getConflictingConditions(Exercise e, Profile p) =>
-      e.avoidConditions.where(p.conditions.contains).toList();
-
-  /// Evalúa si la rutina es compatible con el entorno del usuario (gym vs casa) (US39).
-  static bool isCompatibleWithEnvironment(Workout w, Profile p) =>
-      p.hasGym || !w.needsGym;
-
-  /// Cuenta cuántos ejercicios de una rutina tienen advertencia para el perfil (US39).
-  static int countCautionsInWorkout(Workout w, Profile p) =>
-      w.exercises.where((e) => hasExerciseCaution(e, p)).length;
 }

@@ -20,7 +20,11 @@ class WorkoutTab extends StatelessWidget {
       builder: (context, _) {
         final s = AppStore.instance;
         final p = s.profile;
-        final list = Workouts.forProfile(p);
+        // Todas las rutinas: primero las recomendadas para el perfil, luego las demás
+        final forMe = Workouts.forProfile(p);
+        final others = Workouts.all
+            .where((w) => !forMe.any((m) => m.id == w.id))
+            .toList();
         return Scaffold(
           body: SafeArea(
             child: ListView(
@@ -40,7 +44,11 @@ class WorkoutTab extends StatelessWidget {
                           builder: (_) => const PlacesPage(initialKind: PlaceKind.gym))),
                       icon: const Icon(Icons.place_rounded, size: 16),
                       label: const Text('Gimnasios cerca'),
-                      style: TextButton.styleFrom(foregroundColor: AppColors.brand),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.brand,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
                     ),
                   ],
                 ),
@@ -55,8 +63,6 @@ class WorkoutTab extends StatelessWidget {
                           p.hasGym
                               ? 'Rutinas para gimnasio · ${p.goal.label}'
                               : 'Rutinas en casa · ${p.goal.label}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 13, color: AppColors.muted)),
                     ),
                   ],
@@ -65,8 +71,28 @@ class WorkoutTab extends StatelessWidget {
                   const SizedBox(height: 14),
                   _assignedBanner(context, s),
                 ],
-                const SizedBox(height: 18),
-                ...list.map((w) => _card(context, w, s.isWorkoutDoneToday(w.id))),
+                if (forMe.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  Text('Recomendadas para ti',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.muted,
+                          letterSpacing: 0.5)),
+                  const SizedBox(height: 10),
+                  ...forMe.map((w) => _card(context, w, s.isWorkoutDoneToday(w.id))),
+                ],
+                if (others.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text('Explorar más rutinas (${others.length})',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.muted,
+                          letterSpacing: 0.5)),
+                  const SizedBox(height: 10),
+                  ...others.map((w) => _card(context, w, s.isWorkoutDoneToday(w.id))),
+                ],
               ],
             ),
           ),
@@ -169,7 +195,7 @@ class WorkoutTab extends StatelessWidget {
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 8,
-                      runSpacing: 2,
+                      runSpacing: 4,
                       children: [
                         Text(w.title,
                             style: TextStyle(
@@ -194,12 +220,11 @@ class WorkoutTab extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text('${w.minutes} min · ${w.exercises.length} ejercicios · ${w.focus}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 12.5, color: AppColors.muted)),
                   ],
                 ),
               ),
+              const SizedBox(width: 4),
               Icon(Icons.chevron_right_rounded, color: AppColors.faint),
             ],
           ),

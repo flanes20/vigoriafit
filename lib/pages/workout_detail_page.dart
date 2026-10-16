@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import '../models/exercise_log.dart';
-import '../models/units.dart';
 import '../models/workout.dart';
 import '../services/store.dart';
 import '../services/trainer_service.dart';
@@ -124,16 +123,12 @@ class WorkoutDetailPage extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: AppColors.muted),
           const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.ink,
-              ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
             ),
           ),
         ],
@@ -198,10 +193,9 @@ class WorkoutDetailPage extends StatelessWidget {
                             color: AppColors.warn,
                           ),
                           const SizedBox(width: 3),
-                          Expanded(
+                          Flexible(
                             child: Text(
                               'Revisa por tu condición marcada',
-                              maxLines: 1,
                               style: TextStyle(
                                 fontSize: 10.5,
                                 color: AppColors.warn,
@@ -216,18 +210,19 @@ class WorkoutDetailPage extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 80),
+                constraints: const BoxConstraints(maxWidth: 90),
                 child: Text(
                   e.sets,
-                  textAlign: TextAlign.right,
-                  maxLines: 2,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w700,
                     color: AppColors.brand,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                  textAlign: TextAlign.end,
                 ),
               ),
               const SizedBox(width: 4),
@@ -369,15 +364,12 @@ class WorkoutDetailPage extends StatelessWidget {
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Row(
                                     children: [
-                                      Flexible(
-                                        child: Text(
-                                          '${AppStore.instance.formatWeight(h.kg)}$setsReps',
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.ink,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
+                                      Text(
+                                        '${h.kg.toStringAsFixed(1)} kg$setsReps',
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.ink,
                                         ),
                                       ),
                                       const SizedBox(width: 8),
@@ -400,7 +392,7 @@ class WorkoutDetailPage extends StatelessWidget {
                                               : AppColors.danger,
                                         ),
                                         Text(
-                                          AppStore.instance.formatWeightDiff(diff.abs()),
+                                          '${diff.abs().toStringAsFixed(1)} kg',
                                           style: TextStyle(
                                             fontSize: 11.5,
                                             color: diff > 0
@@ -414,12 +406,10 @@ class WorkoutDetailPage extends StatelessWidget {
                                         borderRadius: BorderRadius.circular(20),
                                         onTap: () {
                                           editing = h;
-                                          final dispVal = s.unitSystem == UnitSystem.imperial
-                                              ? UnitHelper.kgToLbs(h.kg)
-                                              : h.kg;
-                                          ctrl.text = dispVal == dispVal.roundToDouble()
-                                              ? dispVal.toInt().toString()
-                                              : dispVal.toStringAsFixed(1);
+                                          ctrl.text =
+                                              h.kg == h.kg.roundToDouble()
+                                              ? h.kg.toInt().toString()
+                                              : h.kg.toStringAsFixed(1);
                                           setsCtrl.text =
                                               h.sets?.toString() ?? '';
                                           repsCtrl.text =
@@ -526,8 +516,8 @@ class WorkoutDetailPage extends StatelessWidget {
                                         const TextInputType.numberWithOptions(
                                           decimal: true,
                                         ),
-                                    decoration: InputDecoration(
-                                      hintText: 'Peso (${s.unitSystem.weightUnit})',
+                                    decoration: const InputDecoration(
+                                      hintText: 'Peso (kg)',
                                       isDense: true,
                                     ),
                                   ),
@@ -566,19 +556,15 @@ class WorkoutDetailPage extends StatelessWidget {
                                     color: AppColors.brand,
                                   ),
                                   const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      'Editando el registro de ${_fmtDate(editing!.date)}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: AppColors.brand,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                  Text(
+                                    'Editando el registro de ${_fmtDate(editing!.date)}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: AppColors.brand,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  const Spacer(),
                                   InkWell(
                                     onTap: () {
                                       editing = null;
@@ -603,13 +589,10 @@ class WorkoutDetailPage extends StatelessWidget {
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
-                                  final entered = double.tryParse(
+                                  final kg = double.tryParse(
                                     ctrl.text.replaceAll(',', '.'),
                                   );
-                                  if (entered == null || entered <= 0) return;
-                                  final kg = s.unitSystem == UnitSystem.imperial
-                                      ? UnitHelper.lbsToKg(entered)
-                                      : entered;
+                                  if (kg == null || kg <= 0) return;
                                   final sets = int.tryParse(setsCtrl.text);
                                   final reps = int.tryParse(repsCtrl.text);
                                   if (editing != null) {

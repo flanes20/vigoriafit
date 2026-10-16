@@ -170,49 +170,25 @@ class Profile {
         'targetWeightKg': targetWeightKg,
         'daysPerWeek': daysPerWeek,
         'hasGym': hasGym,
-        // Guardamos nombres legibles (ej. 'diabetes') en lugar de índices
-        // para que los datos locales y los de Firestore sean consistentes.
-        'conditions': conditions.map((c) => c.name).toList(),
-        'allergies': allergies.map((a) => a.name).toList(),
+        'conditions': conditions.map((c) => c.index).toList(),
+        'allergies': allergies.map((a) => a.index).toList(),
       };
 
   factory Profile.fromMap(Map<String, dynamic> m) => Profile(
-        name: (m['name'] ?? '').toString(),
-        goal: Goal.values[(((m['goal'] as num?)?.toInt()) ?? 3).clamp(0, 3)],
-        level: Level.values[(((m['level'] as num?)?.toInt()) ?? 0).clamp(0, 2)],
-        age: (((m['age'] as num?)?.toInt()) ?? 20).clamp(12, 120),
-        heightCm: (((m['heightCm'] as num?)?.toDouble()) ?? 170.0).clamp(80.0, 250.0),
-        weightKg: (((m['weightKg'] as num?)?.toDouble()) ?? 70.0).clamp(20.0, 500.0),
-        targetWeightKg: (((m['targetWeightKg'] as num?)?.toDouble()) ?? 70.0).clamp(20.0, 500.0),
-        daysPerWeek: (((m['daysPerWeek'] as num?)?.toInt()) ?? 3).clamp(1, 7),
-        hasGym: m['hasGym'] == true,
+        name: m['name'] ?? '',
+        goal: Goal.values[(m['goal'] ?? 3).clamp(0, 3)],
+        level: Level.values[(m['level'] ?? 0).clamp(0, 2)],
+        age: (m['age'] ?? 20),
+        heightCm: (m['heightCm'] ?? 170).toDouble(),
+        weightKg: (m['weightKg'] ?? 70).toDouble(),
+        targetWeightKg: (m['targetWeightKg'] ?? 70).toDouble(),
+        daysPerWeek: (m['daysPerWeek'] ?? 3),
+        hasGym: m['hasGym'] ?? false,
         conditions: ((m['conditions'] as List?) ?? [])
-            .map((item) {
-              if (item is int) {
-                // Retrocompatibilidad: datos legacy guardados como índice
-                return HealthCondition.values[item.clamp(0, HealthCondition.values.length - 1)];
-              }
-              final str = item.toString();
-              return HealthCondition.values.firstWhere(
-                (c) => c.name == str,
-                orElse: () => HealthCondition.diabetes,
-              );
-            })
-            .toSet()
+            .map((i) => HealthCondition.values[(i as int).clamp(0, HealthCondition.values.length - 1)])
             .toList(),
         allergies: ((m['allergies'] as List?) ?? [])
-            .map((item) {
-              if (item is int) {
-                // Retrocompatibilidad: datos legacy guardados como índice
-                return Allergy.values[item.clamp(0, Allergy.values.length - 1)];
-              }
-              final str = item.toString();
-              return Allergy.values.firstWhere(
-                (a) => a.name == str,
-                orElse: () => Allergy.lactosa,
-              );
-            })
-            .toSet()
+            .map((i) => Allergy.values[(i as int).clamp(0, Allergy.values.length - 1)])
             .toList(),
       );
 
@@ -221,19 +197,4 @@ class Profile {
       Profile.fromMap(jsonDecode(s) as Map<String, dynamic>);
 
   Profile copy() => Profile.fromMap(toMap());
-
-  /// Copia todos los campos de [other] sobre esta instancia (mutación in-place).
-  void copyFrom(Profile other) {
-    name = other.name;
-    goal = other.goal;
-    level = other.level;
-    age = other.age;
-    heightCm = other.heightCm;
-    weightKg = other.weightKg;
-    targetWeightKg = other.targetWeightKg;
-    daysPerWeek = other.daysPerWeek;
-    hasGym = other.hasGym;
-    conditions = List.of(other.conditions);
-    allergies = List.of(other.allergies);
-  }
 }
