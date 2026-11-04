@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -873,5 +875,75 @@ class AppStore extends ChangeNotifier {
       (p) => p.setStringList(_kAchievements, _notifiedAchievements.toList()),
     );
     return newOnes;
+  }
+
+  // ── Eliminación de cuenta (#270) ──────────────────────────────────────────
+
+  /// Borra todos los datos del usuario en Firestore y elimina la cuenta de Auth.
+  /// El cliente DEBE haber completado la reautenticación antes de llamar aquí.
+  /// Después de este método la sesión queda cerrada y el estado se reinicia.
+  Future<void> deleteAccount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('No hay sesión activa.');
+    final uid = user.uid;
+    final db = FirebaseFirestore.instance;
+
+    // 1. Salir del grupo si el usuario es miembro.
+    if (_groupId != null) {
+      try {
+        await db
+            .collection('groups')
+            .doc(_groupId)
+            .collection('members')
+            .doc(uid)
+            .delete();
+      } catch (_) {
+        // El grupo puede no existir o ya se pudo haber salido.
+      }
+    }
+
+    // 2. Borrar colecciones privadas en lotes de máx. 400 ops (límite Firestore: 500).
+    for (final coll in ['food_records', 'water_records', 'workout_sessions']) {
+      var snap = await db
+          .collection('users')
+          .doc(uid)
+          .collection(coll)
+          .limit(400)
+          .get();
+      while (snap.docs.isNotEmpty) {
+        final batch = db.batch();
+        for (final doc in snap.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+        if (snap.docs.length < 400) break;
+        snap = await db
+            .collection('users')
+            .doc(uid)
+            .collection(coll)
+            .limit(400)
+            .get();
+      }
+    }
+
+    // 3. Borrar docs privados y el doc raíz del usuario.
+    final rootBatch = db.batch();
+    rootBatch.delete(
+      db.collection('users').doc(uid).collection('private').doc('health_profile'),
+    );
+    rootBatch.delete(db.collection('users').doc(uid));
+    await rootBatch.commit();
+
+    // 4. Limpiar SharedPreferences antes de eliminar Auth para evitar que
+    //    escrituras pendientes en caché recreen datos.
+    final p = _accountPrefs;
+    if (p != null) await p.clearAll();
+
+    // 5. Eliminar la cuenta de Firebase Auth.
+    await user.delete();
+
+    // 6. Limpiar estado en memoria. No se llama _auth.signOut() porque la
+    //    cuenta ya no existe; solo se reinicia el estado local.
+    await _acceptSession(null);
   }
 }
