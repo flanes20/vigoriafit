@@ -398,6 +398,17 @@ class _PlacesPageState extends State<PlacesPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      width: 44,
+                      height: 4.5,
+                      decoration: BoxDecoration(
+                        color: AppColors.faint,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
                   Text(
                     'Elige tu barrio',
                     style: TextStyle(

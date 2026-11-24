@@ -914,6 +914,17 @@ class _FoodLogSheetState extends State<_FoodLogSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  width: 44,
+                  height: 4.5,
+                  decoration: BoxDecoration(
+                    color: AppColors.faint,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
               Text(widget.editing == null ? 'Registrar comida' : 'Editar registro',
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink)),
               const SizedBox(height: 14),

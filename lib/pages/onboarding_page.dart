@@ -669,6 +669,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  width: 44,
+                  height: 4.5,
+                  decoration: BoxDecoration(
+                    color: AppColors.faint,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
                 Text(
                   title,
                   style: TextStyle(

@@ -43,6 +43,7 @@
 | **S4-12** | P1 | Secciones colapsables en panel del entrenador | **Aprobado** | Validado en dispositivo. Las secciones "Rutinas asignadas (N)" y "Tus alumnos (N)" en `trainer_page.dart` son ahora colapsables: el encabezado actúa como toggle con ícono de flecha (expand/collapse). Ambas secciones inician expandidas. Se eliminó el texto auxiliar que causaba overflow de 53 px en la cabecera de asignaciones. |
 | **S4-13** | P0 | Deduplicación por día único en adherencia semanal e historial completo | **Aprobado** | Validado en dispositivo. Si el alumno realiza múltiples entrenamientos en el mismo día, cada sesión se registra íntegramente en su historial individual, pero en el progreso y adherencia semanal (`trainingDaysThisWeek`) se contabiliza como 1 día único de entrenamiento hacia la meta semanal (`daysPerWeek`), evitando inflar artificialmente la adherencia. |
 | **S4-14** | P1 | Clasificación visual de alumnos por colores (Activo, Nuevo, Inactivo) | **Aprobado** | Validado en dispositivo. Se implementó sistema de 3 colores y badges para los alumnos en el panel del entrenador: (1) **Activo** (Verde / `Color(0xFF2E7D32)`): entrenó en los últimos 4 días (`< 4 días` de inactividad), con borde verde suave, avatar verde y badge "Activo"; si además tiene menos de 7 días registrado se muestra chip adicional "Nuevo". (2) **Nuevo** (Azul / `Color(0xFF1565C0)`): menos de 7 días registrado en el grupo y sin entrenamientos aún, con borde azul suave y badge "Nuevo". (3) **Inactivo** (Naranja/Rojo / `Color(0xFFD84315)`): 4 o más días de inactividad o más de una semana sin entrenar, con borde naranja, badge "Inactivo" e ícono ⚠️. Se agregó una leyenda explicativa en la cabecera de la sección de alumnos. |
+| **S4-15** | P1 | Inspección de progreso y detalle de series en Perfil de Alumno con Modal Bottom Sheet | **Aprobado** | Validado en dispositivo. En `MemberProfilePage`, el entrenador puede inspeccionar el historial de sesiones completadas del alumno. Las sesiones se presentan en tarjetas compactas que al ser tocadas abren una Modal Bottom Sheet estilizada (con barra de arrastre superior, resumen de ejercicios y series, y desglose de cada serie con repeticiones, cargas en kg y poses). Se integró además Modal Bottom Sheet con barra de arrastre en la visualización de rutinas asignadas en `trainer_page.dart` y en las hojas modales de registro de peso, comida, filtros y ejercicios. Se corrigió aserción `_dependents.isEmpty` en `progress_page.dart` desacoplando el guardado del ciclo de vida del modal sheet. |
 
 ---
 
@@ -102,4 +103,21 @@
 | Archivo | Cambio |
 |---|---|
 | `lib/pages/trainer_page.dart` | Implementado sistema de clasificación visual de alumnos: cálculo de `daysJoined` y `daysSince`, asignación de 3 estados temáticos con sus respectivos colores, bordes, avatares y badges (Activo = verde, Nuevo = azul, Inactivo = naranja con ícono de advertencia). Añadida leyenda visual de referencia `_legendItem` en la cabecera de la sección de alumnos. |
+
+---
+
+## Cambios de código — 24 noviembre 2026 (commit `feat(S4-15)`)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `lib/pages/member_profile_page.dart` | Reemplazado `ExpansionTile` por tarjetas compactas con botón "Ver >" que abren Modal Bottom Sheet estilizada con barra de arrastre superior, resumen de series/ejercicios y desglose de repeticiones y cargas en kg. |
+| `lib/pages/trainer_page.dart` | Modal Bottom Sheet interactiva al tocar cualquier rutina asignada, mostrando vigencia, frecuencia y lista de ejercicios incluidos. Añadida barra de arrastre superior al selector de rutinas a asignar. |
+| `lib/pages/progress_page.dart` | Refactorizado `_logWeightDialog` y `_editWeightDialog` a widgets autónomos `_LogWeightSheet` y `_EditWeightSheet` con barra de arrastre superior. Retorno de valor mediante `Navigator.pop(context, kg)` para evitar aserción de ciclo de vida `_dependents.isEmpty`. |
+| `lib/pages/nutrition_page.dart` | Añadida barra de arrastre superior estilizada a la hoja modal de registro de comidas `_FoodLogSheet`. |
+| `lib/pages/places_page.dart` | Añadida barra de arrastre superior estilizada al selector manual de barrios de Santiago. |
+| `lib/pages/workout_detail_page.dart` | Añadida barra de arrastre superior estilizada a la hoja modal de explicación y pesos de ejercicios. |
+| `lib/pages/onboarding_page.dart` | Añadida barra de arrastre superior estilizada al selector modal numérico. |
+| `lib/pages/workout_page.dart` | Añadida barra de arrastre superior estilizada a los selectores modales de filtros de catálogo. |
 

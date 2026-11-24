@@ -278,55 +278,248 @@ class _MemberProfilePageState extends State<MemberProfilePage> {
     final catalogWorkout = Workouts.byId(workoutId);
     final totalExCount = exercises.isNotEmpty ? exercises.length : catalogWorkout.exercises.length;
 
+    int totalDoneSeries = 0;
+    if (exercises.isNotEmpty) {
+      for (final ex in exercises) {
+        totalDoneSeries += ex.series.where((s) => s.status == SeriesStatus.done).length;
+      }
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.line),
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          tilePadding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          leading: Container(
-            width: 42,
-            height: 42,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.brandSoft,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.check_circle_rounded,
-              color: AppColors.brand,
-              size: 22,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _showSessionModalBottomSheet(
+            title: title,
+            dateStr: dateStr,
+            totalExCount: totalExCount,
+            totalDoneSeries: totalDoneSeries,
+            exercises: exercises,
+            catalogWorkout: catalogWorkout,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.brandSoft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.brand,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$dateStr · $totalExCount ejercicios',
+                        style: TextStyle(fontSize: 12, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Ver',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brandDark,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 16,
+                        color: AppColors.brandDark,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          title: Text(
-            title,
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-              color: AppColors.ink,
-            ),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              '$dateStr · $totalExCount ejercicios',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
-          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSessionModalBottomSheet({
+    required String title,
+    required String dateStr,
+    required int totalExCount,
+    required int totalDoneSeries,
+    required List<SessionExercise> exercises,
+    required Workout catalogWorkout,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (ctx, scrollCtrl) => Column(
           children: [
-            Divider(color: AppColors.line),
-            const SizedBox(height: 8),
-            if (exercises.isNotEmpty)
-              ...exercises.map((ex) => _buildExerciseDetail(ex))
-            else
-              ...catalogWorkout.exercises.map((ex) => _buildCatalogExerciseDetail(ex)),
+            // Drag handle superior
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 44,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: AppColors.faint,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            // Cabecera del BottomSheet
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 10, 22, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          dateStr,
+                          style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close_rounded),
+                    color: AppColors.muted,
+                  ),
+                ],
+              ),
+            ),
+            // Resumen de métricas
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.brandSoft,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.fitness_center_rounded, size: 14, color: AppColors.brandDark),
+                        const SizedBox(width: 5),
+                        Text(
+                          '$totalExCount ejercicios',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brandDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (totalDoneSeries > 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.repeat_rounded, size: 14, color: AppColors.muted),
+                          const SizedBox(width: 5),
+                          Text(
+                            '$totalDoneSeries series completadas',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Divider(height: 1, color: AppColors.line),
+            // Lista de ejercicios con scroll
+            Expanded(
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
+                children: [
+                  Text(
+                    'Detalle por ejercicio',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (exercises.isNotEmpty)
+                    ...exercises.map((ex) => _buildExerciseDetail(ex))
+                  else
+                    ...catalogWorkout.exercises.map((ex) => _buildCatalogExerciseDetail(ex)),
+                ],
+              ),
+            ),
           ],
         ),
       ),

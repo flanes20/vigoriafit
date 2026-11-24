@@ -565,96 +565,30 @@ class _ProgressTabState extends State<ProgressTab> {
     bool imperial,
     String unit,
   ) async {
-    final displayVal =
-        imperial ? (currentKg * 2.20462).toStringAsFixed(1) : currentKg.toStringAsFixed(1);
-    final ctrl = TextEditingController(text: displayVal);
-    String? errorText;
-    await showModalBottomSheet(
+    final kg = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: StatefulBuilder(
-          builder: (ctx2, setSheet) => SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Registrar peso ($unit)',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: ctrl,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Peso en $unit',
-                      errorText: errorText,
-                      suffixText: unit,
-                    ),
-                    onChanged: (_) {
-                      if (errorText != null) {
-                        setSheet(() => errorText = null);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final raw = double.tryParse(
-                          ctrl.text.trim().replaceAll(',', '.'),
-                        );
-                        final kg = imperial && raw != null ? raw / 2.20462 : raw;
-                        if (kg == null ||
-                            !kg.isFinite ||
-                            kg <= 0 ||
-                            kg >= 500) {
-                          setSheet(
-                            () => errorText = 'Ingresa un valor válido.',
-                          );
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        try {
-                          await AppStore.instance.addWeight(kg);
-                        } catch (_) {
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content: Text('No se pudo guardar el peso.'),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      child: const Text('Guardar'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      builder: (_) => _LogWeightSheet(
+        currentKg: currentKg,
+        imperial: imperial,
+        unit: unit,
       ),
     );
-    ctrl.dispose();
+    if (kg != null) {
+      try {
+        await AppStore.instance.addWeight(kg);
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo guardar el peso.')),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _editWeightDialog(
@@ -665,81 +599,30 @@ class _ProgressTabState extends State<ProgressTab> {
     bool imperial,
     String unit,
   ) async {
-    final displayVal =
-        imperial ? (w.kg * 2.20462).toStringAsFixed(1) : w.kg.toStringAsFixed(1);
-    final ctrl = TextEditingController(text: displayVal);
-    String? errorText;
-    await showModalBottomSheet(
+    final updatedKg = await showModalBottomSheet<double>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: StatefulBuilder(
-          builder: (ctx2, setSheet) => SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Editar peso ($unit)',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: ctrl,
-                    autofocus: true,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Nuevo peso en $unit',
-                      errorText: errorText,
-                      suffixText: unit,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final raw = double.tryParse(
-                          ctrl.text.trim().replaceAll(',', '.'),
-                        );
-                        final kg = imperial && raw != null ? raw / 2.20462 : raw;
-                        if (kg == null ||
-                            !kg.isFinite ||
-                            kg <= 0 ||
-                            kg >= 500) {
-                          setSheet(
-                            () => errorText = 'Ingresa un valor válido.',
-                          );
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        await s.updateWeight(dk, kg);
-                      },
-                      child: const Text('Guardar cambio'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      builder: (_) => _EditWeightSheet(
+        entry: w,
+        imperial: imperial,
+        unit: unit,
       ),
     );
-    ctrl.dispose();
+    if (updatedKg != null) {
+      try {
+        await s.updateWeight(dk, updatedKg);
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo editar el peso.')),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _deleteWeightDialog(
@@ -838,3 +721,314 @@ class _ProgressTabState extends State<ProgressTab> {
 
   Widget _div() => Container(width: 1, height: 40, color: AppColors.line);
 }
+
+class _LogWeightSheet extends StatefulWidget {
+  final double currentKg;
+  final bool imperial;
+  final String unit;
+
+  const _LogWeightSheet({
+    required this.currentKg,
+    required this.imperial,
+    required this.unit,
+  });
+
+  @override
+  State<_LogWeightSheet> createState() => _LogWeightSheetState();
+}
+
+class _LogWeightSheetState extends State<_LogWeightSheet> {
+  late final TextEditingController _ctrl;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final initVal = widget.imperial
+        ? widget.currentKg * 2.20462
+        : widget.currentKg;
+    _ctrl = TextEditingController(
+      text: initVal > 0 ? initVal.toStringAsFixed(1) : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (v == null || v < 20 || v > 350) {
+      setState(() => _error = 'Ingresa un peso válido');
+      return;
+    }
+    final kg = widget.imperial ? v / 2.20462 : v;
+    Navigator.of(context).pop(kg);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 20,
+        right: 20,
+        top: 8,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 12),
+                width: 44,
+                height: 4.5,
+                decoration: BoxDecoration(
+                  color: AppColors.faint,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            Text(
+              'Registrar peso de hoy',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.ink,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Ingresa tu peso actual en ${widget.unit}:',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _ctrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+              decoration: InputDecoration(
+                suffixText: widget.unit,
+                errorText: _error,
+                filled: true,
+                fillColor: AppColors.surfaceAlt,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.line),
+                ),
+                focusedBorder: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: AppColors.brand, width: 1.8),
+                ),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: Text('Cancelar', style: TextStyle(color: AppColors.muted)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.brand,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Guardar', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditWeightSheet extends StatefulWidget {
+  final WeightEntry entry;
+  final bool imperial;
+  final String unit;
+
+  const _EditWeightSheet({
+    required this.entry,
+    required this.imperial,
+    required this.unit,
+  });
+
+  @override
+  State<_EditWeightSheet> createState() => _EditWeightSheetState();
+}
+
+class _EditWeightSheetState extends State<_EditWeightSheet> {
+  late final TextEditingController _ctrl;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final initVal = widget.imperial
+        ? widget.entry.kg * 2.20462
+        : widget.entry.kg;
+    _ctrl = TextEditingController(text: initVal.toStringAsFixed(1));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (v == null || v < 20 || v > 350) {
+      setState(() => _error = 'Ingresa un peso válido');
+      return;
+    }
+    final kg = widget.imperial ? v / 2.20462 : v;
+    Navigator.of(context).pop(kg);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 20,
+        right: 20,
+        top: 8,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 12),
+                width: 44,
+                height: 4.5,
+                decoration: BoxDecoration(
+                  color: AppColors.faint,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            Text(
+              'Editar peso',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.ink,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Fecha: ${DateFormat('d MMM yyyy', 'es').format(widget.entry.date)}',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _ctrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+              decoration: InputDecoration(
+                suffixText: widget.unit,
+                errorText: _error,
+                filled: true,
+                fillColor: AppColors.surfaceAlt,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.line),
+                ),
+                focusedBorder: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderSide: BorderSide(color: AppColors.brand, width: 1.8),
+                ),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                    child: Text('Cancelar', style: TextStyle(color: AppColors.muted)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.brand,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Guardar', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

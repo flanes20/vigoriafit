@@ -427,7 +427,15 @@ class _DropdownChip<T> extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(height: 8),
+                Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 44,
+                  height: 4.5,
+                  decoration: BoxDecoration(
+                    color: AppColors.faint,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
                 ListTile(
                   title: Text('Todos', style: TextStyle(color: AppColors.muted)),
                   onTap: () => Navigator.pop(ctx, null),

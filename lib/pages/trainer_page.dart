@@ -102,45 +102,60 @@ class _TrainerPageState extends State<TrainerPage> {
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
         expand: false,
-        builder: (ctx, scrollCtrl) => ListView(
-          controller: scrollCtrl,
-          padding: EdgeInsets.fromLTRB(
-            20, 20, 20, MediaQuery.of(ctx).padding.bottom + 30,
-          ),
+        builder: (ctx, scrollCtrl) => Column(
           children: [
-            Text(
-              'Elige una rutina para asignar',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink),
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 44,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: AppColors.faint,
+                borderRadius: BorderRadius.circular(3),
+              ),
             ),
-            const SizedBox(height: 14),
-            ...Workouts.all.map(
-              (w) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => Navigator.pop(ctx, w),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: ListView(
+                controller: scrollCtrl,
+                padding: EdgeInsets.fromLTRB(
+                  20, 10, 20, MediaQuery.of(ctx).padding.bottom + 30,
+                ),
+                children: [
+                  Text(
+                    'Elige una rutina para asignar',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink),
+                  ),
+                  const SizedBox(height: 14),
+                  ...Workouts.all.map(
+                    (w) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => Navigator.pop(ctx, w),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceAlt,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
                             children: [
-                              Text(w.title, style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.ink)),
-                              Text('${w.minutes} min · ${w.focus}', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(w.title, style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.ink)),
+                                    Text('${w.minutes} min · ${w.focus}', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.chevron_right_rounded, color: AppColors.faint),
                             ],
                           ),
                         ),
-                        Icon(Icons.chevron_right_rounded, color: AppColors.faint),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ],
@@ -739,7 +754,6 @@ class _TrainerPageState extends State<TrainerPage> {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
       decoration: BoxDecoration(
         color: isFuture
             ? AppColors.surfaceAlt
@@ -747,42 +761,229 @@ class _TrainerPageState extends State<TrainerPage> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: iconColor.withValues(alpha: 0.3)),
       ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: iconColor),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _showAssignmentModalBottomSheet(a),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+            child: Row(
               children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: isFuture ? AppColors.ink : (isOverdue ? Colors.deepOrange : AppColors.brandDark),
+                Icon(icon, size: 18, color: iconColor),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: isFuture ? AppColors.ink : (isOverdue ? Colors.deepOrange : AppColors.brandDark),
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: isFuture
+                              ? AppColors.muted
+                              : (isOverdue ? Colors.black87 : AppColors.brandDark.withValues(alpha: 0.7)),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: isFuture
-                        ? AppColors.muted
-                        : (isOverdue ? Colors.black87 : AppColors.brandDark.withValues(alpha: 0.7)),
-                  ),
+                IconButton(
+                  onPressed: () => _deleteAssignment(a),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  color: AppColors.muted,
+                  tooltip: 'Quitar rutina asignada',
+                  visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
           ),
-          IconButton(
-            onPressed: () => _deleteAssignment(a),
-            icon: const Icon(Icons.close_rounded, size: 18),
-            color: AppColors.muted,
-            tooltip: 'Quitar rutina asignada',
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  void _showAssignmentModalBottomSheet(Assignment a) {
+    final fmt = DateFormat('d MMMM yyyy', 'es');
+    final isFuture = a.isFuture();
+    final isOverdue = a.isOverdue();
+    final isEffective = a.isEffective();
+
+    final statusText = isEffective ? 'Activa hoy' : (isOverdue ? 'Retrasada' : 'Programada');
+    final statusColor = isEffective ? AppColors.brand : (isOverdue ? Colors.deepOrange : AppColors.warn);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollCtrl) => Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 44,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: AppColors.faint,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 10, 22, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          a.workoutTitle,
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                statusText,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${a.daysPerWeek} días por semana',
+                              style: TextStyle(fontSize: 12, color: AppColors.muted),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close_rounded),
+                    color: AppColors.muted,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 4),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.date_range_rounded, size: 18, color: AppColors.brand),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Desde ${fmt.format(a.startAt)}${a.endAt != null ? ' hasta ${fmt.format(a.endAt!)}' : ' (sin fin programado)'}',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.ink),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Divider(height: 1, color: AppColors.line),
+            Expanded(
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(22, 14, 22, 20),
+                children: [
+                  Text(
+                    'Ejercicios incluidos (${a.exercisesSnapshot.length})',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.ink),
+                  ),
+                  const SizedBox(height: 10),
+                  ...a.exercisesSnapshot.map((exMap) {
+                    final name = exMap['name'] as String? ?? 'Ejercicio';
+                    final sets = exMap['sets'] as String? ?? '';
+                    final note = exMap['note'] as String? ?? '';
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.fitness_center_rounded, size: 18, color: AppColors.brand),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: AppColors.ink),
+                                ),
+                                if (sets.isNotEmpty || note.isNotEmpty)
+                                  Text(
+                                    sets.isNotEmpty ? sets : note,
+                                    style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _deleteAssignment(a);
+                    },
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Quitar esta asignación'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.danger,
+                      side: const BorderSide(color: AppColors.danger),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
