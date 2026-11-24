@@ -680,12 +680,25 @@ class _TrainerPageState extends State<TrainerPage> {
                   style: TextStyle(fontSize: 13, color: AppColors.muted),
                 ),
               )
-            else
+            else ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 4,
+                  children: [
+                    _legendItem(const Color(0xFF2E7D32), 'Activo (<4 d)'),
+                    _legendItem(const Color(0xFF1565C0), 'Nuevo (<7 d)'),
+                    _legendItem(const Color(0xFFD84315), 'Inactivo (≥4 d)'),
+                  ],
+                ),
+              ),
               ..._members.map((m) {
                 final effectiveAssignment = _assignments.where((a) => a.isEffective()).firstOrNull;
                 final days = effectiveAssignment?.daysPerWeek ?? (_assignments.isNotEmpty ? _assignments.first.daysPerWeek : 0);
                 return _memberTile(m, days);
               }),
+            ],
           ],
         ],
       ),
@@ -774,23 +787,95 @@ class _TrainerPageState extends State<TrainerPage> {
     );
   }
 
+  Widget _legendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: AppColors.muted,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _memberTile(GroupMember m, int daysPerWeek) {
-    final noActivity = m.lastWorkoutAt == null;
+    final now = DateTime.now();
+    final daysJoined = now.difference(m.joinedAt).inDays;
+    final isNew = daysJoined < 7;
     final daysSince = m.lastWorkoutAt == null
         ? null
-        : DateTime.now().difference(m.lastWorkoutAt!).inDays;
-    final warn = daysSince != null && daysSince >= 5;
+        : now.difference(m.lastWorkoutAt!).inDays;
+    
+    // Clasificación de estados solicitada:
+    // 1. Activo: entrenó en los últimos 4 días (días 0, 1, 2, 3) -> Verde
+    // 2. Inactivo: 4 o más días de inactividad, o más de 7 días registrado sin entrenar nunca -> Naranja
+    // 3. Nuevo: menos de 7 días registrado y aún no entrena -> Azul
+    final bool isActive = daysSince != null && daysSince < 4;
+    final bool isInactive = (daysSince != null && daysSince >= 4) || (m.lastWorkoutAt == null && !isNew);
+    final bool isNewOnly = m.lastWorkoutAt == null && isNew;
+
+    final Color themeColor;
+    final Color softBgColor;
+    final Color borderColor;
+    final String statusLabel;
+
+    if (isActive) {
+      themeColor = const Color(0xFF2E7D32);
+      softBgColor = const Color(0xFFE8F5E9);
+      borderColor = const Color(0xFFA5D6A7);
+      statusLabel = 'Activo';
+    } else if (isInactive) {
+      themeColor = const Color(0xFFD84315);
+      softBgColor = const Color(0xFFFBE9E7);
+      borderColor = const Color(0xFFFFAB91);
+      statusLabel = 'Inactivo';
+    } else {
+      // isNewOnly
+      themeColor = const Color(0xFF1565C0);
+      softBgColor = const Color(0xFFE3F2FD);
+      borderColor = const Color(0xFF90CAF9);
+      statusLabel = 'Nuevo';
+    }
+
     final adherencePct = daysPerWeek > 0
         ? (m.trainingDaysThisWeek / daysPerWeek * 100).clamp(0, 100).round()
         : null;
+
+    final String subtitleText;
+    if (m.lastWorkoutAt == null) {
+      subtitleText = isNew
+          ? (daysJoined == 0 ? 'Se unió hoy · Sin entrenar aún' : 'Se unió hace $daysJoined d · Sin entrenar aún')
+          : 'Sin entrenar hace $daysJoined días';
+    } else if (daysSince == 0) {
+      subtitleText = adherencePct != null
+          ? '$adherencePct% esta semana (${m.trainingDaysThisWeek}/$daysPerWeek d) · entrenó hoy'
+          : '${m.trainingDaysThisWeek} d esta semana · entrenó hoy';
+    } else {
+      subtitleText = adherencePct != null
+          ? '$adherencePct% esta semana (${m.trainingDaysThisWeek}/$daysPerWeek d) · último hace $daysSince d'
+          : '${m.trainingDaysThisWeek} d esta semana · último hace $daysSince d';
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: (warn || noActivity) ? AppColors.warn : AppColors.line,
-        ),
+        border: Border.all(color: borderColor, width: 1.5),
       ),
       child: Material(
         color: Colors.transparent,
@@ -814,19 +899,22 @@ class _TrainerPageState extends State<TrainerPage> {
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
+                // Avatar con inicial y color temático
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 42,
+                  height: 42,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: AppColors.brandSoft,
+                    color: softBgColor,
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderColor),
                   ),
                   child: Text(
                     m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      color: AppColors.brandDark,
+                      fontSize: 16,
+                      color: themeColor,
                     ),
                   ),
                 ),
@@ -835,36 +923,80 @@ class _TrainerPageState extends State<TrainerPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        m.name,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.ink,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              m.name,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14.5,
+                                color: AppColors.ink,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Badge de estado principal
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: softBgColor,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: borderColor),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isInactive) ...[
+                                  Icon(Icons.warning_amber_rounded, size: 12, color: themeColor),
+                                  const SizedBox(width: 3),
+                                ],
+                                Text(
+                                  statusLabel,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: themeColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Chip adicional "Nuevo" si está activo pero se unió hace menos de una semana
+                          if (isNew && !isNewOnly) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE3F2FD),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFF90CAF9)),
+                              ),
+                              child: const Text(
+                                'Nuevo',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1565C0),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
+                      const SizedBox(height: 3),
                       Text(
-                        noActivity
-                            ? 'Sin entrenamientos registrados aún'
-                            : adherencePct != null
-                                ? '$adherencePct% esta semana (${m.trainingDaysThisWeek} de $daysPerWeek días) · último hace $daysSince días'
-                                : '${m.trainingDaysThisWeek} esta semana · último hace $daysSince días',
+                        subtitleText,
                         style: TextStyle(
                           fontSize: 12,
-                          color: (warn || noActivity)
-                              ? AppColors.warn
-                              : AppColors.muted,
+                          color: isInactive ? const Color(0xFFD84315) : AppColors.muted,
+                          fontWeight: isInactive ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (warn || noActivity)
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    size: 18,
-                    color: AppColors.warn,
-                  ),
-                const SizedBox(width: 4),
                 IconButton(
                   onPressed: () => _removeMember(m),
                   icon: const Icon(Icons.person_remove_rounded, size: 18),
