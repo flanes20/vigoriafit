@@ -122,3 +122,21 @@
 | `lib/pages/onboarding_page.dart` | Añadida barra de arrastre superior estilizada al selector modal numérico. |
 | `lib/pages/workout_page.dart` | Añadida barra de arrastre superior estilizada a los selectores modales de filtros de catálogo. |
 
+---
+
+## Cambios de código — 25 noviembre 2026 (commit `feat(S5-01): nutricion calendario, metas personalizadas, historial y sobreconsumo`)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `pubspec.yaml` | Añadido `flutter_localizations` (SDK) para soporte de localización en español (`es`) e inglés (`en`). |
+| `lib/main.dart` | Configurados `localizationsDelegates` (`GlobalMaterialLocalizations`, `GlobalWidgetsLocalizations`, `GlobalCupertinoLocalizations`) y `supportedLocales` en `MaterialApp`. |
+| `lib/models/profile.dart` | Añadidos campos opcionales `customKcal`, `customProtein`, `customCarbs` y `customFat` con fallback en getters y serialización. |
+| `lib/models/food_record.dart` | Añadido soporte de `uid` en `copyWith`. |
+| `lib/services/food_service.dart` | Reemplazado `_assertSession()` por `_ensureSession()` con fallback local para garantizar guardado inmediato sin bloquear registros. |
+| `lib/services/water_service.dart` | Reemplazado `_assertSession()` por `_ensureSession()` con fallback local. |
+| `lib/services/firebase_profile_repository.dart` | Filtrado `_private` a los campos permitidos por `firestore.rules` (`age`, `heightCm`, `weightKg`, `targetWeightKg`, `conditions`, `allergies`). |
+| `lib/services/store.dart` | Suscripción reactiva de `foods` y `waters` en `AppStore`. Añadido `saveCustomNutritionGoals()` y `_applyCustomGoals()` para persistencia instantánea en caché local por usuario. |
+| `lib/pages/nutrition_page.dart` | Rediseño de resumen diario (`_dailySummaryCard`) y registro de alimentos (`_FoodLogSheet`) con barras de progreso en tiempo real (kcal, proteínas, carbohidratos y grasas) y prevención de overflow. Eliminado avatar de perfil superior. Calendario mensual interactivo (`_CalendarPickerSheet`) con días registrados marcados y modo solo lectura para días históricos/futuros. Hoja `_EditGoalsSheet` con toggle en vivo consumidas/restantes y metas personalizadas. Hoja `_MacroHistorySheet` (Hoy, Semanal, Mensual, Anual). Borrado de día con doble confirmación estricta. Corrección de botones de agua (`FittedBox`). Visualización de sobreconsumo (tramo rojo y marcador de meta) en calorías y macronutrientes con protección de escalado para gramajes altos. |
+

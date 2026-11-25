@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/logs.dart';
@@ -77,12 +78,13 @@ class WaterService extends ChangeNotifier {
   // ── CRUD ──────────────────────────────────────────────────────────────────
 
   Future<WaterRecord> add(int amountMl, {DateTime? recordedAt}) async {
-    _assertSession();
+    await _ensureSession();
     if (amountMl <= 0) throw ArgumentError('La cantidad debe ser mayor que 0 ml.');
     final now = DateTime.now();
+    final effectiveUid = _uid ?? 'local_user';
     final r = WaterRecord(
       id:         _uuid.v4(),
-      uid:        _uid!,
+      uid:        effectiveUid,
       amountMl:   amountMl,
       recordedAt: recordedAt ?? now,
       createdAt:  now,
@@ -96,7 +98,7 @@ class WaterService extends ChangeNotifier {
   }
 
   Future<void> update(String id, {int? amountMl, DateTime? recordedAt}) async {
-    _assertSession();
+    await _ensureSession();
     final idx = _records.indexWhere((r) => r.id == id);
     if (idx < 0) return;
     final prev = _records[idx];
@@ -115,7 +117,7 @@ class WaterService extends ChangeNotifier {
   }
 
   Future<void> delete(String id) async {
-    _assertSession();
+    await _ensureSession();
     _records.removeWhere((r) => r.id == id);
     notifyListeners();
     await _persist();
@@ -163,9 +165,22 @@ class WaterService extends ChangeNotifier {
     'updatedAt':  Timestamp.fromDate(r.updatedAt),
   };
 
-  void _assertSession() {
-    if (_uid == null || _prefs == null) {
-      throw StateError('WaterService: no hay sesión activa.');
-    }
+  Future<void> _ensureSession() async {
+    if (_uid != null && _prefs != null) return;
+    try {
+      final storage = await SharedPreferences.getInstance();
+      final uid = _uid ?? 'local_user';
+      _uid = uid;
+      _prefs = AccountPreferences(storage, uid);
+      final raw = _prefs!.getStringList(_kRecords) ?? [];
+      for (final s in raw) {
+        try {
+          final r = WaterRecord.fromJson(s);
+          if (r.uid == uid && !_records.any((x) => x.id == r.id)) {
+            _records.add(r);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 }

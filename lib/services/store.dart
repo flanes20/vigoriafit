@@ -42,7 +42,10 @@ class AppStore extends ChangeNotifier {
            }),
        sessions = sessionService ?? WorkoutSessionService(),
        foods    = foodService  ?? FoodService(),
-       waters   = waterService ?? WaterService();
+       waters   = waterService ?? WaterService() {
+    foods.addListener(notifyListeners);
+    waters.addListener(notifyListeners);
+  }
   static final AppStore instance = AppStore(
     auth: FirebaseAccountAuth(),
     profiles: FirebaseProfileRepository(),
@@ -81,6 +84,7 @@ class AppStore extends ChangeNotifier {
   String? get currentUid => _account?.uid;
 
   static const _kProfile = 'brio_profile_v1';
+  static const _kCustomGoals = 'brio_custom_goals_v1';
   static const _kOnboarded = 'brio_onboarded_v1';
   static const _kTheme = 'brio_theme_v1';
   static const _kUnits = 'brio_units_v1';
@@ -216,6 +220,7 @@ class AppStore extends ChangeNotifier {
           _profile = remote.profile;
           _onboarded = remote.onboarded;
           _isTrainer = remote.trainer;
+          _applyCustomGoals(p);
           await p.setString(_kProfile, _profile.toJson());
           await p.setBool(_kOnboarded, remote.onboarded);
         } else {
@@ -279,6 +284,7 @@ class AppStore extends ChangeNotifier {
   void _readAccountCache(AccountPreferences p) {
     final pj = p.getString(_kProfile);
     if (pj != null) _profile = Profile.fromJson(pj);
+    _applyCustomGoals(p);
     _onboarded = p.getBool(_kOnboarded) ?? false;
     _themeMode = ThemeMode.values[(p.getInt(_kTheme) ?? 0).clamp(0, 2)];
     _units = UnitSystem.values[(p.getInt(_kUnits) ?? 0).clamp(0, UnitSystem.values.length - 1)];
@@ -568,6 +574,53 @@ class AppStore extends ChangeNotifier {
 
   Future<void> saveProfile(Profile profile) async {
     await _saveRemoteProfile(profile, onboarded: _onboarded);
+  }
+
+  void _applyCustomGoals(AccountPreferences p) {
+    final raw = p.getString(_kCustomGoals);
+    if (raw == null) return;
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      _profile.customKcal = m['kcal'] as int?;
+      _profile.customProtein = m['protein'] as int?;
+      _profile.customCarbs = m['carbs'] as int?;
+      _profile.customFat = m['fat'] as int?;
+    } catch (_) {}
+  }
+
+  /// Guarda metas nutricionales personalizadas de forma instantánea en caché
+  /// local por usuario, sin depender de reglas de health_profile en Firestore.
+  Future<void> saveCustomNutritionGoals({
+    int? kcal,
+    int? protein,
+    int? carbs,
+    int? fat,
+  }) async {
+    final updated = _profile.copy()
+      ..customKcal = kcal
+      ..customProtein = protein
+      ..customCarbs = carbs
+      ..customFat = fat;
+    _profile = updated;
+    notifyListeners();
+
+    final cache = _accountPrefs;
+    if (cache != null) {
+      if (kcal == null && protein == null && carbs == null && fat == null) {
+        await cache.remove(_kCustomGoals);
+      } else {
+        await cache.setString(
+          _kCustomGoals,
+          jsonEncode({
+            if (kcal != null) 'kcal': kcal,
+            if (protein != null) 'protein': protein,
+            if (carbs != null) 'carbs': carbs,
+            if (fat != null) 'fat': fat,
+          }),
+        );
+      }
+      await cache.setString(_kProfile, updated.toJson());
+    }
   }
 
   Future<void> _saveRemoteProfile(

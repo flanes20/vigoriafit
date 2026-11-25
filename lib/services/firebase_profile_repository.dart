@@ -14,11 +14,19 @@ class FirebaseProfileRepository implements ProfileRepository {
     'daysPerWeek',
     'hasGym',
   ];
+  static const _privateFields = [
+    'age',
+    'heightCm',
+    'weightKg',
+    'targetWeightKg',
+    'conditions',
+    'allergies',
+  ];
   Map<String, dynamic> _basic(Profile profile) => Map.fromEntries(
     profile.toMap().entries.where((entry) => _basicFields.contains(entry.key)),
   );
   Map<String, dynamic> _private(Profile profile) => Map.fromEntries(
-    profile.toMap().entries.where((entry) => !_basicFields.contains(entry.key)),
+    profile.toMap().entries.where((entry) => _privateFields.contains(entry.key)),
   );
 
   @override

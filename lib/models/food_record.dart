@@ -60,6 +60,7 @@ class FoodRecord {
 
   // ── Inmutabilidad y actualización ────────────────────────────────────────
   FoodRecord copyWith({
+    String?   uid,
     double?   quantity,
     MealType? mealType,
     DateTime? consumedAt,
@@ -67,7 +68,7 @@ class FoodRecord {
     String?   aiSource,
   }) => FoodRecord(
     id:         id,
-    uid:        uid,
+    uid:        uid        ?? this.uid,
     foodId:     foodId,
     foodName:   foodName,
     refQty:     refQty,

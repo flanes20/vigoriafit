@@ -107,6 +107,10 @@ class Profile {
   bool hasGym;
   List<HealthCondition> conditions;
   List<Allergy> allergies;
+  int? customKcal;
+  int? customProtein;
+  int? customCarbs;
+  int? customFat;
 
   Profile({
     this.name = '',
@@ -120,6 +124,10 @@ class Profile {
     this.hasGym = false,
     List<HealthCondition>? conditions,
     List<Allergy>? allergies,
+    this.customKcal,
+    this.customProtein,
+    this.customCarbs,
+    this.customFat,
   })  : conditions = conditions ?? [],
         allergies = allergies ?? [];
 
@@ -135,8 +143,9 @@ class Profile {
   }
 
   /// Estimación simple de calorías diarias (Mifflin-St Jeor, actividad media,
-  /// ajustada por objetivo). Es orientativa, no reemplaza a un profesional.
+  /// ajustada por objetivo), o meta personalizada si el usuario la definió.
   int get dailyKcal {
+    if (customKcal != null && customKcal! > 0) return customKcal!;
     final bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + 5;
     final maintenance = bmr * (1.2 + daysPerWeek * 0.06);
     final adj = switch (goal) {
@@ -147,14 +156,29 @@ class Profile {
     return (maintenance * (1 + adj)).round();
   }
 
-  /// Proteína diaria recomendada (g), según objetivo.
+  /// Proteína diaria recomendada (g), según objetivo o meta personalizada.
   int get proteinGrams {
+    if (customProtein != null && customProtein! > 0) return customProtein!;
     final perKg = switch (goal) {
       Goal.gainMuscle => 2.0,
       Goal.loseFat => 1.8,
       _ => 1.5,
     };
     return (weightKg * perKg).round();
+  }
+
+  /// Grasas diarias recomendadas (g) (~25% de calorías diarias, 9 kcal/g).
+  int get fatGrams {
+    if (customFat != null && customFat! > 0) return customFat!;
+    return ((dailyKcal * 0.25) / 9).round().clamp(25, 120);
+  }
+
+  /// Carbohidratos diarios recomendados (g) (resto calórico, 4 kcal/g).
+  int get carbsGrams {
+    if (customCarbs != null && customCarbs! > 0) return customCarbs!;
+    final rem = dailyKcal - (proteinGrams * 4) - (fatGrams * 9);
+    final val = rem > 0 ? (rem / 4).round() : 50;
+    return val.clamp(30, 400);
   }
 
   /// Vasos de agua diarios sugeridos (~2.2 L de base).
@@ -172,6 +196,10 @@ class Profile {
         'hasGym': hasGym,
         'conditions': conditions.map((c) => c.index).toList(),
         'allergies': allergies.map((a) => a.index).toList(),
+        if (customKcal != null) 'customKcal': customKcal,
+        if (customProtein != null) 'customProtein': customProtein,
+        if (customCarbs != null) 'customCarbs': customCarbs,
+        if (customFat != null) 'customFat': customFat,
       };
 
   factory Profile.fromMap(Map<String, dynamic> m) => Profile(
@@ -190,6 +218,10 @@ class Profile {
         allergies: ((m['allergies'] as List?) ?? [])
             .map((i) => Allergy.values[(i as int).clamp(0, Allergy.values.length - 1)])
             .toList(),
+        customKcal: m['customKcal'] as int?,
+        customProtein: m['customProtein'] as int?,
+        customCarbs: m['customCarbs'] as int?,
+        customFat: m['customFat'] as int?,
       );
 
   String toJson() => jsonEncode(toMap());

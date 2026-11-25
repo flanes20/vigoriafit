@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/food_record.dart';
@@ -62,11 +63,12 @@ class FoodService extends ChangeNotifier {
   /// Añade un registro. El [id] se genera en cliente; reintentos con el mismo
   /// ID actualizan en vez de duplicar.
   Future<FoodRecord> add(FoodRecord r) async {
-    _assertSession();
+    await _ensureSession();
+    final effectiveUid = _uid ?? (r.uid.isNotEmpty ? r.uid : 'local_user');
     final record = r.id.isEmpty
         ? FoodRecord(
             id:         _uuid.v4(),
-            uid:        _uid!,
+            uid:        effectiveUid,
             foodId:     r.foodId,
             foodName:   r.foodName,
             refQty:     r.refQty,
@@ -82,7 +84,7 @@ class FoodService extends ChangeNotifier {
             createdAt:  r.createdAt,
             updatedAt:  r.updatedAt,
           )
-        : r;
+        : (r.uid.isEmpty ? r.copyWith(uid: effectiveUid) : r);
     final idx = _records.indexWhere((x) => x.id == record.id);
     if (idx >= 0) {
       _records[idx] = record;
@@ -99,7 +101,7 @@ class FoodService extends ChangeNotifier {
 
   /// Actualiza un registro existente (conserva su ID y createdAt).
   Future<void> update(FoodRecord updated) async {
-    _assertSession();
+    await _ensureSession();
     final idx = _records.indexWhere((r) => r.id == updated.id);
     if (idx < 0) return;
     _records[idx] = updated;
@@ -111,7 +113,7 @@ class FoodService extends ChangeNotifier {
   /// Elimina un registro. La operación se persiste localmente de inmediato;
   /// si la sync remota falla, el registro ya no reaparecerá al reabrir.
   Future<void> delete(String id) async {
-    _assertSession();
+    await _ensureSession();
     _records.removeWhere((r) => r.id == id);
     notifyListeners();
     await _persist();
@@ -161,9 +163,22 @@ class FoodService extends ChangeNotifier {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  void _assertSession() {
-    if (_uid == null || _prefs == null) {
-      throw StateError('FoodService: no hay sesión activa.');
-    }
+  Future<void> _ensureSession() async {
+    if (_uid != null && _prefs != null) return;
+    try {
+      final storage = await SharedPreferences.getInstance();
+      final uid = _uid ?? 'local_user';
+      _uid = uid;
+      _prefs = AccountPreferences(storage, uid);
+      final raw = _prefs!.getStringList(_kRecords) ?? [];
+      for (final s in raw) {
+        try {
+          final r = FoodRecord.fromJson(s);
+          if (r.uid == uid && !_records.any((x) => x.id == r.id)) {
+            _records.add(r);
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 }
