@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/achievements.dart';
+import '../data/nutrition.dart';
 import '../models/exercise_log.dart';
 import '../models/logs.dart';
 import '../models/profile.dart';
@@ -85,6 +86,7 @@ class AppStore extends ChangeNotifier {
 
   static const _kProfile = 'brio_profile_v1';
   static const _kCustomGoals = 'brio_custom_goals_v1';
+  static const _kMealBudgets = 'brio_meal_budgets_v1';
   static const _kOnboarded = 'brio_onboarded_v1';
   static const _kTheme = 'brio_theme_v1';
   static const _kUnits = 'brio_units_v1';
@@ -107,6 +109,7 @@ class AppStore extends ChangeNotifier {
   static const _kAchievements = 'brio_achievements_v1';
 
   Profile _profile = Profile();
+  Map<MealType, int>? _customMealBudgets;
   bool _onboarded = false;
   ThemeMode _themeMode = ThemeMode.system;
   UnitSystem _units = UnitSystem.metric;
@@ -171,6 +174,7 @@ class AppStore extends ChangeNotifier {
     _account = user;
     _accountPrefs = null;
     _profile = Profile();
+    _customMealBudgets = null;
     _onboarded = false;
     _themeMode = ThemeMode.system;
     _units = UnitSystem.metric;
@@ -285,6 +289,7 @@ class AppStore extends ChangeNotifier {
     final pj = p.getString(_kProfile);
     if (pj != null) _profile = Profile.fromJson(pj);
     _applyCustomGoals(p);
+    _applyMealBudgets(p);
     _onboarded = p.getBool(_kOnboarded) ?? false;
     _themeMode = ThemeMode.values[(p.getInt(_kTheme) ?? 0).clamp(0, 2)];
     _units = UnitSystem.values[(p.getInt(_kUnits) ?? 0).clamp(0, UnitSystem.values.length - 1)];
@@ -620,6 +625,65 @@ class AppStore extends ChangeNotifier {
         );
       }
       await cache.setString(_kProfile, updated.toJson());
+    }
+  }
+
+  void _applyMealBudgets(AccountPreferences p) {
+    final raw = p.getString(_kMealBudgets);
+    if (raw == null) {
+      _customMealBudgets = null;
+      return;
+    }
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final parsed = <MealType, int>{};
+      for (final type in MealType.values) {
+        final v = m[type.name];
+        if (v is int && v >= 0) parsed[type] = v;
+      }
+      _customMealBudgets = parsed.isEmpty ? null : parsed;
+    } catch (_) {
+      _customMealBudgets = null;
+    }
+  }
+
+  /// Meta calórica para cada horario de comida (personalizada o proporcional al objetivo diario).
+  int mealKcalGoal(MealType type) {
+    final custom = _customMealBudgets;
+    if (custom != null && custom.containsKey(type)) {
+      return custom[type]!;
+    }
+    final total = _profile.dailyKcal;
+    final b = (total * 0.25).round();
+    final l = (total * 0.35).round();
+    final d = (total * 0.30).round();
+    final s = (total - b - l - d).clamp(0, total);
+    return switch (type) {
+      MealType.desayuno => b,
+      MealType.almuerzo => l,
+      MealType.cena => d,
+      MealType.snack => s,
+    };
+  }
+
+  Future<void> saveMealKcalBudgets(Map<MealType, int>? budgets) async {
+    if (budgets == null) {
+      _customMealBudgets = null;
+    } else {
+      _customMealBudgets = Map<MealType, int>.from(budgets);
+    }
+    notifyListeners();
+
+    final cache = _accountPrefs;
+    if (cache != null) {
+      if (budgets == null) {
+        await cache.remove(_kMealBudgets);
+      } else {
+        await cache.setString(
+          _kMealBudgets,
+          jsonEncode({for (final e in budgets.entries) e.key.name: e.value}),
+        );
+      }
     }
   }
 

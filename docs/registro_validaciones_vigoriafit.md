@@ -140,3 +140,14 @@
 | `lib/services/store.dart` | Suscripción reactiva de `foods` y `waters` en `AppStore`. Añadido `saveCustomNutritionGoals()` y `_applyCustomGoals()` para persistencia instantánea en caché local por usuario. |
 | `lib/pages/nutrition_page.dart` | Rediseño de resumen diario (`_dailySummaryCard`) y registro de alimentos (`_FoodLogSheet`) con barras de progreso en tiempo real (kcal, proteínas, carbohidratos y grasas) y prevención de overflow. Eliminado avatar de perfil superior. Calendario mensual interactivo (`_CalendarPickerSheet`) con días registrados marcados y modo solo lectura para días históricos/futuros. Hoja `_EditGoalsSheet` con toggle en vivo consumidas/restantes y metas personalizadas. Hoja `_MacroHistorySheet` (Hoy, Semanal, Mensual, Anual). Borrado de día con doble confirmación estricta. Corrección de botones de agua (`FittedBox`). Visualización de sobreconsumo (tramo rojo y marcador de meta) en calorías y macronutrientes con protección de escalado para gramajes altos. |
 
+---
+
+## Cambios de código — 25 noviembre 2026 (commit `feat(S5-02-04): distribucion de calorias por horario y eliminacion explicita de alimentos`)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `lib/services/store.dart` | Añadida persistencia local por usuario para metas calóricas por horario (`brio_meal_budgets_v1`), `mealKcalGoal(MealType)` con cálculo proporcional por defecto (`25% / 35% / 30% / 10%`) y `saveMealKcalBudgets()`. |
+| `lib/pages/nutrition_page.dart` | Añadido botón explícito de eliminación con confirmación en `_foodRecordTile`. Añadida tarjeta `_mealDistributionCard` con barras de kcal (y sobreconsumo) para Desayuno, Almuerzo, Cena y Snack y agrupación visual de registros por horario. Añadido slide `⚖️ Dividir calorías` (`_buildMealDivisionSlide`) dentro de `_FoodLogSheet` con sliders ajustables por horario y barra proyectada del horario en `_nutrientPreview`. |
+

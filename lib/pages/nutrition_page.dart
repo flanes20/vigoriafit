@@ -358,9 +358,13 @@ class _NutritionTabState extends State<NutritionTab> {
         isEditable: isToday,
         onAddFood: isToday ? () => _openFoodSheet(context) : null,
       ),
+      const SizedBox(height: 14),
+
+      // Barras de kcal por horario (Desayuno, Almuerzo, Cena, Snack)
+      _mealDistributionCard(records, p, isToday),
       const SizedBox(height: 16),
 
-      // Lista de registros de hoy
+      // Lista de registros divididos por horario
       if (records.isEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -375,7 +379,7 @@ class _NutritionTabState extends State<NutritionTab> {
         Row(
           children: [
             Text(
-              'Registrado (${records.length})',
+              'Registros por horario (${records.length})',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.ink),
             ),
             const Spacer(),
@@ -391,8 +395,49 @@ class _NutritionTabState extends State<NutritionTab> {
               ),
           ],
         ),
-        const SizedBox(height: 6),
-        ...records.map((r) => _foodRecordTile(r, isEditable: isToday)),
+        const SizedBox(height: 8),
+        for (final meal in [MealType.desayuno, MealType.almuerzo, MealType.cena, MealType.snack])
+          if (records.any((r) => r.mealType == meal)) ...[
+            Builder(
+              builder: (context) {
+                final mealRecs = records.where((r) => r.mealType == meal).toList();
+                final mealKcal = mealRecs.fold<double>(0.0, (acc, r) => acc + r.kcal);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Text(
+                              '${meal.emoji} ${meal.label}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${mealKcal.toStringAsFixed(0)} kcal',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ...mealRecs.map((r) => _foodRecordTile(r, isEditable: isToday)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
       ],
       const SizedBox(height: 24),
 
@@ -1112,6 +1157,214 @@ class _NutritionTabState extends State<NutritionTab> {
     );
   }
 
+  Widget _mealDistributionCard(
+    List<FoodRecord> records,
+    Profile profile,
+    bool isEditable,
+  ) {
+    final s = AppStore.instance;
+    const meals = [
+      MealType.desayuno,
+      MealType.almuerzo,
+      MealType.cena,
+      MealType.snack,
+    ];
+    const mealColors = {
+      MealType.desayuno: Color(0xFFF59E0B),
+      MealType.almuerzo: AppColors.brand,
+      MealType.cena: Color(0xFF6366F1),
+      MealType.snack: Color(0xFF10B981),
+    };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Calorías por horario',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.ink,
+                ),
+              ),
+              const Spacer(),
+              if (isEditable)
+                TextButton.icon(
+                  onPressed: () => _openFoodSheet(context, initialSlide: 1),
+                  icon: const Icon(Icons.tune_rounded, size: 15),
+                  label: const Text('Dividir kcal'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: AppColors.brand,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (int i = 0; i < meals.length; i++) ...[
+            Builder(
+              builder: (context) {
+                final meal = meals[i];
+                final mealKcal = records
+                    .where((r) => r.mealType == meal)
+                    .fold<double>(0.0, (acc, r) => acc + r.kcal);
+                final goal = s.mealKcalGoal(meal);
+                final safeGoal = goal > 0 ? goal : 1;
+                final isOver = mealKcal > safeGoal;
+                final color = mealColors[meal] ?? AppColors.brand;
+                final rem = (safeGoal - mealKcal).clamp(0.0, 999999.0);
+                final excess = isOver ? (mealKcal - safeGoal) : 0.0;
+
+                return Padding(
+                  padding: EdgeInsets.only(bottom: i == meals.length - 1 ? 0 : 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '${meal.emoji} ${meal.label}',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (_showRemainingKcal)
+                            Text(
+                              isOver
+                                  ? '+${excess.toStringAsFixed(0)} kcal exc.'
+                                  : '${rem.toStringAsFixed(0)} / $goal kcal rest.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: isOver ? AppColors.danger : AppColors.muted,
+                              ),
+                            )
+                          else
+                            Text(
+                              '${mealKcal.toStringAsFixed(0)} / $goal kcal',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: isOver ? AppColors.danger : AppColors.muted,
+                              ),
+                            ),
+                          if (isEditable) ...[
+                            const SizedBox(width: 6),
+                            InkWell(
+                              onTap: () => _openFoodSheet(context, initialMealType: meal),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Icon(Icons.add_rounded, size: 14, color: color),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      if (isOver)
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final maxScale = mealKcal > safeGoal * 1.25
+                                ? mealKcal
+                                : safeGoal * 1.25;
+                            final goalRatio = (safeGoal / maxScale).clamp(0.0, 1.0);
+                            final totalRatio = (mealKcal / maxScale).clamp(0.0, 1.0);
+                            final w = constraints.maxWidth;
+                            final goalX = w <= 10.0
+                                ? w / 2
+                                : (w * goalRatio).clamp(4.0, w - 4.0);
+
+                            return SizedBox(
+                              height: 10,
+                              child: Stack(
+                                alignment: Alignment.centerLeft,
+                                children: [
+                                  Container(
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.line,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: w * totalRatio,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.danger,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: goalX,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: color,
+                                      borderRadius: const BorderRadius.horizontal(
+                                        left: Radius.circular(4),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    left: goalX - 1,
+                                    child: Container(
+                                      width: 2,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(1),
+                                        border: Border.all(
+                                          color: AppColors.ink.withValues(alpha: 0.45),
+                                          width: 0.6,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        )
+                      else
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: _showRemainingKcal
+                                ? (rem / safeGoal).clamp(0.0, 1.0)
+                                : (mealKcal / safeGoal).clamp(0.0, 1.0),
+                            minHeight: 6,
+                            backgroundColor: AppColors.line,
+                            valueColor: AlwaysStoppedAnimation<Color>(color),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _waterSummaryCard({required int totalMl, required int goalMl}) {
     final pct = (totalMl / goalMl).clamp(0, 1).toDouble();
     return Container(
@@ -1210,13 +1463,44 @@ class _NutritionTabState extends State<NutritionTab> {
                 'P ${r.proteinG.toStringAsFixed(1)} g',
                 style: TextStyle(fontSize: 11.5, color: AppColors.muted)),
           ])),
-          if (isEditable)
+          if (isEditable) ...[
             IconButton(
               icon: const Icon(Icons.edit_rounded, size: 16),
               color: AppColors.muted,
               visualDensity: VisualDensity.compact,
+              tooltip: 'Editar',
               onPressed: () => _openFoodSheet(context, editing: r),
             ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, size: 17),
+              color: AppColors.danger,
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Eliminar',
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Eliminar alimento'),
+                    content: Text('¿Deseas eliminar "${r.foodName}"?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                        child: const Text('Eliminar'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  await AppStore.instance.foods.delete(r.id);
+                }
+              },
+            ),
+          ],
         ]),
       ),
     );
@@ -1382,7 +1666,12 @@ class _NutritionTabState extends State<NutritionTab> {
 
   // ── Sheet de registro de comida ───────────────────────────────────────────
 
-  Future<void> _openFoodSheet(BuildContext context, {FoodRecord? editing}) async {
+  Future<void> _openFoodSheet(
+    BuildContext context, {
+    FoodRecord? editing,
+    MealType? initialMealType,
+    int initialSlide = 0,
+  }) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1390,7 +1679,11 @@ class _NutritionTabState extends State<NutritionTab> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      builder: (ctx) => _FoodLogSheet(editing: editing),
+      builder: (ctx) => _FoodLogSheet(
+        editing: editing,
+        initialMealType: initialMealType,
+        initialSlide: initialSlide,
+      ),
     );
   }
 
@@ -1692,8 +1985,14 @@ class _NutritionTabState extends State<NutritionTab> {
 // ════════════════════════════════════════════════════════════════════════════
 
 class _FoodLogSheet extends StatefulWidget {
-  const _FoodLogSheet({this.editing});
+  const _FoodLogSheet({
+    this.editing,
+    this.initialMealType,
+    this.initialSlide = 0,
+  });
   final FoodRecord? editing;
+  final MealType? initialMealType;
+  final int initialSlide;
 
   @override
   State<_FoodLogSheet> createState() => _FoodLogSheetState();
@@ -1710,16 +2009,27 @@ class _FoodLogSheetState extends State<_FoodLogSheet> {
   bool _saving = false;
   String? _error;
 
+  late int _slide;
+  late Map<MealType, double> _mealBudgets;
+  bool _savingBudgets = false;
+
   @override
   void initState() {
     super.initState();
+    _slide = widget.editing != null ? 0 : widget.initialSlide.clamp(0, 1);
     final e = widget.editing;
     if (e != null) {
       _selected = FoodCatalog.byId(e.foodId);
       _qtyCtrl.text = e.quantity.toStringAsFixed(
           e.quantity == e.quantity.roundToDouble() ? 0 : 1);
       _mealType = e.mealType;
+    } else if (widget.initialMealType != null) {
+      _mealType = widget.initialMealType!;
     }
+    final store = AppStore.instance;
+    _mealBudgets = {
+      for (final m in MealType.values) m: store.mealKcalGoal(m).toDouble(),
+    };
     _searchCtrl.addListener(() => setState(() {}));
     _qtyCtrl.addListener(() => setState(() {}));
   }
@@ -1770,12 +2080,80 @@ class _FoodLogSheetState extends State<_FoodLogSheet> {
                     ),
                   ),
                 ),
-                Text(widget.editing == null ? 'Registrar comida' : 'Editar registro',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink)),
-                const SizedBox(height: 14),
+                Text(
+                  widget.editing != null
+                      ? 'Editar registro'
+                      : (_slide == 0 ? 'Registrar comida' : 'Dividir calorías del día'),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.ink),
+                ),
+                const SizedBox(height: 12),
 
-                // Búsqueda o alimento seleccionado
-                if (_selected == null) ...[
+                if (widget.editing == null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceAlt,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _slide = 0),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _slide == 0 ? AppColors.surface : Colors.transparent,
+                                borderRadius: BorderRadius.circular(9),
+                                border: _slide == 0 ? Border.all(color: AppColors.line) : null,
+                              ),
+                              child: Text(
+                                '🍽️ Registrar alimento',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: _slide == 0 ? AppColors.ink : AppColors.muted,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _slide = 1),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _slide == 1 ? AppColors.surface : Colors.transparent,
+                                borderRadius: BorderRadius.circular(9),
+                                border: _slide == 1 ? Border.all(color: AppColors.line) : null,
+                              ),
+                              child: Text(
+                                '⚖️ Dividir calorías',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: _slide == 1 ? AppColors.ink : AppColors.muted,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                if (_slide == 1 && widget.editing == null)
+                  _buildMealDivisionSlide(profile)
+                else ...[
+                  // Búsqueda o alimento seleccionado
+                  if (_selected == null) ...[
                   TextField(
                     controller: _searchCtrl,
                     autofocus: true,
@@ -1869,11 +2247,186 @@ class _FoodLogSheetState extends State<_FoodLogSheet> {
                     ),
                   ),
                 ],
+                ],
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMealDivisionSlide(Profile profile) {
+    final dailyKcal = profile.dailyKcal > 0 ? profile.dailyKcal : 2000;
+    const meals = [
+      MealType.desayuno,
+      MealType.almuerzo,
+      MealType.cena,
+      MealType.snack,
+    ];
+    const mealColors = {
+      MealType.desayuno: Color(0xFFF59E0B),
+      MealType.almuerzo: AppColors.brand,
+      MealType.cena: Color(0xFF6366F1),
+      MealType.snack: Color(0xFF10B981),
+    };
+
+    final assignedSum = meals.fold<int>(
+      0,
+      (acc, m) => acc + (_mealBudgets[m]?.round() ?? 0),
+    );
+    final diff = dailyKcal - assignedSum;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.line),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Meta diaria: $dailyKcal kcal',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      diff == 0
+                          ? 'Distribución exacta (100%)'
+                          : (diff > 0
+                              ? 'Faltan $diff kcal por asignar'
+                              : 'Excedido por ${-diff} kcal'),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: diff == 0
+                            ? const Color(0xFF10B981)
+                            : (diff > 0 ? AppColors.warn : AppColors.danger),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  final b = (dailyKcal * 0.25).round().toDouble();
+                  final l = (dailyKcal * 0.35).round().toDouble();
+                  final d = (dailyKcal * 0.30).round().toDouble();
+                  final s = (dailyKcal - b - l - d).clamp(0, dailyKcal).toDouble();
+                  setState(() {
+                    _mealBudgets[MealType.desayuno] = b;
+                    _mealBudgets[MealType.almuerzo] = l;
+                    _mealBudgets[MealType.cena] = d;
+                    _mealBudgets[MealType.snack] = s;
+                  });
+                },
+                child: const Text('Automático', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        for (final meal in meals) ...[
+          Builder(
+            builder: (context) {
+              final val = (_mealBudgets[meal] ?? 0).clamp(0.0, dailyKcal.toDouble());
+              final pct = dailyKcal > 0 ? ((val / dailyKcal) * 100).round() : 0;
+              final color = mealColors[meal] ?? AppColors.brand;
+              final stepDivs = (dailyKcal / 25).round().clamp(1, 200);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          '${meal.emoji} ${meal.label}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${val.round()} kcal ($pct%)',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 4,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                      ),
+                      child: Slider(
+                        value: val,
+                        min: 0,
+                        max: dailyKcal.toDouble(),
+                        divisions: stepDivs,
+                        activeColor: color,
+                        inactiveColor: AppColors.line,
+                        onChanged: (v) {
+                          setState(() => _mealBudgets[meal] = (v / 25).round() * 25.0);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _savingBudgets
+                ? null
+                : () async {
+                    setState(() => _savingBudgets = true);
+                    try {
+                      await AppStore.instance.saveMealKcalBudgets({
+                        for (final e in _mealBudgets.entries) e.key: e.value.round(),
+                      });
+                      if (!context.mounted) return;
+                      if (widget.initialSlide == 1) {
+                        Navigator.pop(context);
+                      } else {
+                        setState(() => _slide = 0);
+                      }
+                    } finally {
+                      if (mounted) setState(() => _savingBudgets = false);
+                    }
+                  },
+            child: _savingBudgets
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                  )
+                : const Text('Guardar distribución'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2008,6 +2561,31 @@ class _FoodLogSheetState extends State<_FoodLogSheet> {
             goal: goalFat.toDouble(),
             unit: 'g',
             color: const Color(0xFF14B8A6),
+          ),
+          const SizedBox(height: 10),
+
+          // Barra del horario seleccionado
+          Builder(
+            builder: (context) {
+              final mealRecords = AppStore.instance.foods
+                  .forDay(today)
+                  .where((r) => r.mealType == _mealType);
+              final currentMealKcal = mealRecords.fold<double>(0.0, (acc, r) => acc + r.kcal);
+              final baseMealKcal = (edit != null && edit.mealType == _mealType
+                      ? currentMealKcal - edit.kcal
+                      : currentMealKcal)
+                  .clamp(0.0, 99999.0);
+              final mealGoal = AppStore.instance.mealKcalGoal(_mealType).toDouble();
+
+              return _sheetMacroBar(
+                label: '${_mealType.emoji} ${_mealType.label}',
+                current: baseMealKcal,
+                added: foodKcal,
+                goal: mealGoal,
+                unit: 'kcal',
+                color: const Color(0xFF6366F1),
+              );
+            },
           ),
         ],
       ),
