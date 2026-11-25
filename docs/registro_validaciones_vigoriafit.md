@@ -66,10 +66,10 @@
 | **S5-10** | P1 | Validación de agua inválida, meta y aislamiento A/B | **Aprobado** | Validado en dispositivo: rechazo de `0` y negativos en entrada manual y actualización inmediata de barra de progreso al ajustar la meta diaria. |
 | **S5-11** | P0 | Operaciones offline de comida y agua + reconciliación | **Aprobado** | Validado en dispositivo en modo avión: registros, ediciones y borrados de comida y agua se conservan al cerrar/reabrir sin red y se concilian al reconectar sin duplicar ni resucitar eliminados. |
 | **S5-12** | P0 | Rechazo remoto de reglas tras guardado local | **Pendiente** | Pendiente de validación dirigida. |
-| **S5-13** | P0 | Idempotencia, doble toque y cambio de cuenta | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-13** | P0 | Idempotencia, doble toque y cambio de cuenta | **Aprobado** | Validado en dispositivo: bloqueo de botón `_saving` evita duplicados ante doble toque rápido. |
 | **S5-14** | P1 | Recuperación multidispositivo / instalación limpia | **Pendiente** | Pendiente de validación dirigida. |
 | **S5-15** | P0 | Reglas Firestore de comida y agua | **Pendiente** | Pendiente de auditoría/test de reglas. |
-| **S5-16** | P1 | Recordatorios de agua y entrenamiento | **Pendiente** | Pendiente de validación en dispositivo. |
+| **S5-16** | P1 | Recordatorios de agua y entrenamiento | **Aprobado** | Validado en dispositivo: al desactivar los recordatorios dentro de la app se cancelan las alarmas programadas (el permiso del sistema operativo permanece concedido hasta que el usuario lo revoque en Ajustes del dispositivo, comportamiento estándar de Android/iOS). |
 
 ---
 
