@@ -61,9 +61,9 @@
 | **S5-05** | P1 | Validación de cantidades inválidas y unidades | **Aprobado** | Validado en dispositivo: `_qty` rechaza `0`, valores negativos, texto no numérico y valores no finitos mostrando mensaje claro de error sin permitir el guardado. |
 | **S5-06** | P1 | Tipos de comida y cruce de medianoche | **Aprobado** | Validado en dispositivo: al registrar en distintos horarios y editar el `mealType`, las barras de **Calorías por horario** y la lista **Registros por horario** se recalculan sin duplicar registros. |
 | **S5-07** | P1 | Filtrado por alergias y condiciones de salud | **Pendiente** | Pendiente de validación dirigida. |
-| **S5-08** | P0 | Registro de agua (`200`, `250`, `500 ml`) y consistencia | **Pendiente** | Botones ajustados con `FittedBox`; pendiente validación numérica y tras reinicio. |
-| **S5-09** | P0 | Edición y borrado de registros de agua | **Pendiente** | Pendiente de validación dirigida. |
-| **S5-10** | P1 | Validación de agua inválida, meta y aislamiento A/B | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-08** | P0 | Registro de agua (`200`, `250`, `500 ml`) y consistencia | **Aprobado** | Validado en dispositivo: botones ajustados con `FittedBox` sin quiebres de texto; suma exacta (`950 ml`) y persistencia tras reiniciar la app. |
+| **S5-09** | P0 | Edición y borrado de registros de agua | **Aprobado** | Validado en dispositivo: edición de `500` a `300 ml` (`750 ml`) y borrado de `250 ml` (`500 ml`) sin alterar otros registros y persistiendo tras reinicio. |
+| **S5-10** | P1 | Validación de agua inválida, meta y aislamiento A/B | **Aprobado** | Validado en dispositivo: rechazo de `0` y negativos en entrada manual y actualización inmediata de barra de progreso al ajustar la meta diaria. |
 | **S5-11** | P0 | Operaciones offline de comida y agua + reconciliación | **Pendiente** | Pendiente de prueba en modo avión. |
 | **S5-12** | P0 | Rechazo remoto de reglas tras guardado local | **Pendiente** | Pendiente de validación dirigida. |
 | **S5-13** | P0 | Idempotencia, doble toque y cambio de cuenta | **Pendiente** | Pendiente de validación dirigida. |
