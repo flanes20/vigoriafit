@@ -58,8 +58,8 @@
 | **S5-02** | P0 | Cálculo proporcional de calorías y macros | **Aprobado** | Fórmula aplicada proporcionalmente a kcal, proteínas, carbohidratos y grasas, con vista previa proyectada en barras, indicador visual de sobreconsumo (kcal y macros) y distribución calórica configurable por horario (Desayuno, Almuerzo, Cena y Snack). |
 | **S5-03** | P0 | Edición de consumo manteniendo ID | **Aprobado** | Al editar un registro existente se conserva el mismo `id`, sustituyendo el valor previo y actualizando totales diarios y por horario sin duplicar ni acumular. |
 | **S5-04** | P0 | Borrado individual, cancelación y borrado de día | **Aprobado** | Swipe y botón explícito de papelera con diálogo de confirmación; cancelar no altera registros; confirmar descuenta solo ese registro y persiste. Borrado completo del día protegido con doble confirmación estricta. |
-| **S5-05** | P1 | Validación de cantidades inválidas y unidades | **Pendiente** | En código `_qty` rechaza `0`, negativos, no numéricos y no finitos; pendiente ejecución de prueba dirigida en dispositivo. |
-| **S5-06** | P1 | Tipos de comida y cruce de medianoche | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-05** | P1 | Validación de cantidades inválidas y unidades | **Aprobado** | Validado en dispositivo: `_qty` rechaza `0`, valores negativos, texto no numérico y valores no finitos mostrando mensaje claro de error sin permitir el guardado. |
+| **S5-06** | P1 | Tipos de comida y cruce de medianoche | **Aprobado** | Validado en dispositivo: al registrar en distintos horarios y editar el `mealType`, las barras de **Calorías por horario** y la lista **Registros por horario** se recalculan sin duplicar registros. |
 | **S5-07** | P1 | Filtrado por alergias y condiciones de salud | **Pendiente** | Pendiente de validación dirigida. |
 | **S5-08** | P0 | Registro de agua (`200`, `250`, `500 ml`) y consistencia | **Pendiente** | Botones ajustados con `FittedBox`; pendiente validación numérica y tras reinicio. |
 | **S5-09** | P0 | Edición y borrado de registros de agua | **Pendiente** | Pendiente de validación dirigida. |
