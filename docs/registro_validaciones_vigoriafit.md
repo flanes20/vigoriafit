@@ -48,6 +48,31 @@
 
 ---
 
+# Registro de Validaciones VigoriaFit — Sprint 5
+
+## Estado de Ejecución por Caso
+
+| ID | Prioridad | Nombre / Acción | Estado | Observaciones / Arreglos |
+|---|---|---|---|---|
+| **S5-01** | P1 | Búsqueda y selección de alimento | **Aprobado** | Catálogo filtrable por nombre, estado vacío claro sin selección equivocada y unidad/cantidad de referencia visibles. Añadida hoja responsiva sin overflow de teclado, calendario mensual (`_CalendarPickerSheet`) con días registrados marcados y modo solo lectura para días pasados/futuros, historial por macro (Hoy/Semanal/Mensual/Anual), metas personalizadas (`saveCustomNutritionGoals`) y toggle consumido/restante en vivo. |
+| **S5-02** | P0 | Cálculo proporcional de calorías y macros | **Aprobado** | Fórmula aplicada proporcionalmente a kcal, proteínas, carbohidratos y grasas, con vista previa proyectada en barras, indicador visual de sobreconsumo (kcal y macros) y distribución calórica configurable por horario (Desayuno, Almuerzo, Cena y Snack). |
+| **S5-03** | P0 | Edición de consumo manteniendo ID | **Aprobado** | Al editar un registro existente se conserva el mismo `id`, sustituyendo el valor previo y actualizando totales diarios y por horario sin duplicar ni acumular. |
+| **S5-04** | P0 | Borrado individual, cancelación y borrado de día | **Aprobado** | Swipe y botón explícito de papelera con diálogo de confirmación; cancelar no altera registros; confirmar descuenta solo ese registro y persiste. Borrado completo del día protegido con doble confirmación estricta. |
+| **S5-05** | P1 | Validación de cantidades inválidas y unidades | **Pendiente** | En código `_qty` rechaza `0`, negativos, no numéricos y no finitos; pendiente ejecución de prueba dirigida en dispositivo. |
+| **S5-06** | P1 | Tipos de comida y cruce de medianoche | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-07** | P1 | Filtrado por alergias y condiciones de salud | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-08** | P0 | Registro de agua (`200`, `250`, `500 ml`) y consistencia | **Pendiente** | Botones ajustados con `FittedBox`; pendiente validación numérica y tras reinicio. |
+| **S5-09** | P0 | Edición y borrado de registros de agua | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-10** | P1 | Validación de agua inválida, meta y aislamiento A/B | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-11** | P0 | Operaciones offline de comida y agua + reconciliación | **Pendiente** | Pendiente de prueba en modo avión. |
+| **S5-12** | P0 | Rechazo remoto de reglas tras guardado local | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-13** | P0 | Idempotencia, doble toque y cambio de cuenta | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-14** | P1 | Recuperación multidispositivo / instalación limpia | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-15** | P0 | Reglas Firestore de comida y agua | **Pendiente** | Pendiente de auditoría/test de reglas. |
+| **S5-16** | P1 | Recordatorios de agua y entrenamiento | **Pendiente** | Pendiente de validación en dispositivo. |
+
+---
+
 ## Cambios de código — 18/19 noviembre 2026 (commit `feat(S4-06, S4-07)`)
 
 ### Archivos modificados
