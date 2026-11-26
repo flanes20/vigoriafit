@@ -3,6 +3,22 @@ import 'package:vigoriafit/data/nutrition.dart';
 import 'package:vigoriafit/models/profile.dart';
 
 void main() {
+  group('MealType extensions — label y emoji', () {
+    test('label devuelve el texto correcto para cada tipo', () {
+      expect(MealType.desayuno.label, 'Desayuno');
+      expect(MealType.almuerzo.label, 'Almuerzo');
+      expect(MealType.snack.label, 'Snack');
+      expect(MealType.cena.label, 'Cena');
+    });
+
+    test('emoji devuelve el emoji correcto para cada tipo', () {
+      expect(MealType.desayuno.emoji, '🌅');
+      expect(MealType.almuerzo.emoji, '🍽️');
+      expect(MealType.snack.emoji, '🍎');
+      expect(MealType.cena.emoji, '🌙');
+    });
+  });
+
   group('Nutrition.forGoalAndType — filtrado de alimentos', () {
     test('F1: excluye alérgenos declarados', () {
       final p = Profile(allergies: [Allergy.lactosa]);

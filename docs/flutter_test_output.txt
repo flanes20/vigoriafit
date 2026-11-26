@@ -1,0 +1,18 @@
+Fecha de ejecución: 26 noviembre 2026
+Commit: f7afe67
+Versión app: 1.6.2+15
+Rama: steven-test
+Dispositivo (referencia): ZTE Z2357N (Android 13)
+Comando: flutter test --coverage --reporter compact
+
+00:24 +224: All tests passed!
+
+Cobertura (lcov.info):
+  Líneas cubiertas (LH): 976
+  Líneas totales (LF):   2519
+  Cobertura global:      38,7 %
+
+Motor de advertencias (store, progression_engine, achievements):
+  Líneas cubiertas (LH): 364
+  Líneas totales (LF):   640
+  Cobertura:             56,9 %
