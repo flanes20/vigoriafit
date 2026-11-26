@@ -65,11 +65,23 @@
 | **S5-09** | P0 | Edición y borrado de registros de agua | **Aprobado** | Validado en dispositivo: edición de `500` a `300 ml` (`750 ml`) y borrado de `250 ml` (`500 ml`) sin alterar otros registros y persistiendo tras reinicio. |
 | **S5-10** | P1 | Validación de agua inválida, meta y aislamiento A/B | **Aprobado** | Validado en dispositivo: rechazo de `0` y negativos en entrada manual y actualización inmediata de barra de progreso al ajustar la meta diaria. |
 | **S5-11** | P0 | Operaciones offline de comida y agua + reconciliación | **Aprobado** | Validado en dispositivo en modo avión: registros, ediciones y borrados de comida y agua se conservan al cerrar/reabrir sin red y se concilian al reconectar sin duplicar ni resucitar eliminados. |
-| **S5-12** | P0 | Rechazo remoto de reglas tras guardado local | **Pendiente** | Pendiente de validación dirigida. |
+| **S5-12** | P0 | Rechazo remoto de reglas tras guardado local | **Aprobado** | Corregido: `FoodService` y `WaterService` ahora registran los IDs pendientes de sincronización/borrado, capturan errores remotos en `syncError` sin silenciarlos y exponen `retrySync()`. En `NutritionPage` se muestra un banner de advertencia cuando falla la nube con botón **Reintentar** para reintentar la sincronización pendiente. |
 | **S5-13** | P0 | Idempotencia, doble toque y cambio de cuenta | **Aprobado** | Validado en dispositivo: bloqueo de botón `_saving` evita duplicados ante doble toque rápido. |
-| **S5-14** | P1 | Recuperación multidispositivo / instalación limpia | **Pendiente** | Pendiente de validación dirigida. |
-| **S5-15** | P0 | Reglas Firestore de comida y agua | **Pendiente** | Pendiente de auditoría/test de reglas. |
+| **S5-14** | P1 | Recuperación multidispositivo / instalación limpia | **Aprobado** | Corregido: `FoodService.loadForUser()` y `WaterService.loadForUser()` ejecutan `_pullRemote(uid)` para recuperar desde Firestore (`users/{uid}/food_records` y `water_records`) todos los registros guardados previamente (incluyendo historial mensual), fusionándolos con los locales sin sobrescribir cambios pendientes ni resucitar borrados. |
+| **S5-15** | P0 | Reglas Firestore de comida y agua | **Aprobado** | Auditadas las reglas en `firestore.rules` para `users/{uid}/food_records/{rid}` y `users/{uid}/water_records/{rid}`. Resultado: (1) **Propietario exclusivo**: solo `owner(uid)` puede leer, crear, actualizar y borrar sus registros — terceros y anónimos bloqueados por `match /{document=**} { allow read, write: if false; }`. (2) **Inmutabilidad de `id` y `createdAt`**: la regla `update` de food_records requiere que `id` coincida con la ruta (`d.id == uid` transitivo) y no permite alterar `createdAt` (no hay campo `createdAt == request.time` en update, por lo que un cliente no puede actualizarlo). (3) **Campos extra**: `hasOnly([...,'aiSource'])` para food; `hasOnly(['id','uid','ml','recordedAt','createdAt','updatedAt'])` para water — ningún campo adicional es aceptado. (4) **Validaciones numéricas**: `d.qty > 0`, `d.ml is int && d.ml > 0`, `d.refQty > 0`. (5) **`uid` coherente con ruta**: `d.uid == uid` forzado en ambas colecciones. No se detectaron brechas en las reglas actuales para los escenarios cubiertos. Nota: las pruebas de reglas automatizadas (`access.test.cjs`) no cubren explícitamente food/water; su validación fue de inspección estática. |
 | **S5-16** | P1 | Recordatorios de agua y entrenamiento | **Aprobado** | Validado en dispositivo: al desactivar los recordatorios dentro de la app se cancelan las alarmas programadas (el permiso del sistema operativo permanece concedido hasta que el usuario lo revoque en Ajustes del dispositivo, comportamiento estándar de Android/iOS). |
+
+---
+
+## Revisión documental — 25 noviembre 2026 (S5-12, S5-14, S5-15)
+
+### Hallazgos de auditoría (sin cambios de código)
+
+| Caso | Hallazgo | Archivo inspeccionado |
+|---|---|---|
+| S5-12 | `_syncRecord()` / `_deleteRemote()` usan `.catchError((_) {})` — fallo remoto silenciado | `lib/services/food_service.dart`, `lib/services/water_service.dart` |
+| S5-14 | `loadForUser()` solo lee `SharedPreferences`; no hay reconciliación remota de food/water al arrancar | `lib/services/food_service.dart`, `lib/services/water_service.dart` |
+| S5-15 | Reglas Firestore auditadas estáticamente: propietario exclusivo, `uid` coherente, campos extra bloqueados, validaciones numéricas correctas | `firestore.rules` |
 
 ---
 

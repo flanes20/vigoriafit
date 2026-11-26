@@ -180,6 +180,11 @@ class _NutritionTabState extends State<NutritionTab> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               children: [
                 _weekSelector(),
+                if (AppStore.instance.foods.syncError != null ||
+                    AppStore.instance.waters.syncError != null) ...[
+                  const SizedBox(height: 12),
+                  _syncErrorBanner(),
+                ],
                 const SizedBox(height: 16),
                 _scannerCard(context),
                 const SizedBox(height: 14),
@@ -193,6 +198,43 @@ class _NutritionTabState extends State<NutritionTab> {
           ),
         );
       },
+    );
+  }
+
+  Widget _syncErrorBanner() {
+    final msg = AppStore.instance.foods.syncError ??
+        AppStore.instance.waters.syncError ??
+        'Error al sincronizar con la nube.';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off, color: Colors.red.shade700, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Guardado localmente. $msg',
+              style: TextStyle(
+                color: Colors.red.shade900,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              AppStore.instance.foods.retrySync();
+              AppStore.instance.waters.retrySync();
+            },
+            child: const Text('Reintentar'),
+          ),
+        ],
+      ),
     );
   }
 

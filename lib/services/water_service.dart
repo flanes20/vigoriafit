@@ -24,9 +24,14 @@ class WaterService extends ChangeNotifier {
   AccountPreferences? _prefs;
   final List<WaterRecord> _records = [];
   int _goalMl = _defaultGoalMl;
+  String? _syncError;
+  final Set<String> _pendingSyncIds = {};
+  final Set<String> _pendingDeleteIds = {};
 
   List<WaterRecord> get records => List.unmodifiable(_records);
   int get goalMl => _goalMl;
+  String? get syncError => _syncError;
+  bool get hasPendingSync => _pendingSyncIds.isNotEmpty || _pendingDeleteIds.isNotEmpty;
 
   // ── Carga / limpieza por cuenta ───────────────────────────────────────────
 
@@ -43,6 +48,9 @@ class WaterService extends ChangeNotifier {
       } catch (_) {}
     }
     notifyListeners();
+    if (uid != 'local_user') {
+      _pullRemote(uid);
+    }
   }
 
   void clearForUser() {
@@ -50,6 +58,9 @@ class WaterService extends ChangeNotifier {
     _prefs   = null;
     _records.clear();
     _goalMl  = _defaultGoalMl;
+    _syncError = null;
+    _pendingSyncIds.clear();
+    _pendingDeleteIds.clear();
     notifyListeners();
   }
 
@@ -132,30 +143,106 @@ class WaterService extends ChangeNotifier {
     await p.setStringList(_kRecords, _records.map((r) => r.toJson()).toList());
   }
 
-  // ── Sync remota (best-effort, silenciosa) ─────────────────────────────────
+  // ── Sync remota con reporte de error y reintento ────────────────────────────
 
   void _syncRecord(WaterRecord r) {
     final uid = _uid;
-    if (uid == null) return;
+    if (uid == null || uid == 'local_user') return;
+    _pendingSyncIds.add(r.id);
+    _pendingDeleteIds.remove(r.id);
     FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('water_records')
         .doc(r.id)
         .set(_toFirestore(r))
-        .catchError((_) {});
+        .then((_) {
+          _pendingSyncIds.remove(r.id);
+          if (_pendingSyncIds.isEmpty && _pendingDeleteIds.isEmpty) {
+            _syncError = null;
+          }
+          notifyListeners();
+        })
+        .catchError((e) {
+          _syncError = 'No se pudo sincronizar hidratación con la nube ($e).';
+          notifyListeners();
+        });
   }
 
   void _deleteRemote(String id) {
     final uid = _uid;
-    if (uid == null) return;
+    if (uid == null || uid == 'local_user') return;
+    _pendingDeleteIds.add(id);
+    _pendingSyncIds.remove(id);
     FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('water_records')
         .doc(id)
         .delete()
-        .catchError((_) {});
+        .then((_) {
+          _pendingDeleteIds.remove(id);
+          if (_pendingSyncIds.isEmpty && _pendingDeleteIds.isEmpty) {
+            _syncError = null;
+          }
+          notifyListeners();
+        })
+        .catchError((e) {
+          _syncError = 'No se pudo eliminar hidratación en la nube ($e).';
+          notifyListeners();
+        });
+  }
+
+  Future<void> retrySync() async {
+    final uid = _uid;
+    if (uid == null || uid == 'local_user') return;
+    _syncError = null;
+    notifyListeners();
+    final toSync = _pendingSyncIds.toList();
+    for (final id in toSync) {
+      final idx = _records.indexWhere((r) => r.id == id);
+      if (idx >= 0) _syncRecord(_records[idx]);
+    }
+    final toDelete = _pendingDeleteIds.toList();
+    for (final id in toDelete) {
+      _deleteRemote(id);
+    }
+  }
+
+  Future<void> _pullRemote(String uid) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('water_records')
+          .get();
+      if (_uid != uid) return;
+      var changed = false;
+      for (final doc in snap.docs) {
+        final data = Map<String, dynamic>.from(doc.data());
+        for (final k in const ['recordedAt', 'createdAt', 'updatedAt']) {
+          final v = data[k];
+          if (v is Timestamp) data[k] = v.toDate().toIso8601String();
+        }
+        try {
+          final remote = WaterRecord.fromMap(data);
+          if (_pendingDeleteIds.contains(remote.id)) continue;
+          final idx = _records.indexWhere((r) => r.id == remote.id);
+          if (idx < 0) {
+            _records.add(remote);
+            changed = true;
+          } else if (!_pendingSyncIds.contains(remote.id) &&
+              remote.updatedAt.isAfter(_records[idx].updatedAt)) {
+            _records[idx] = remote;
+            changed = true;
+          }
+        } catch (_) {}
+      }
+      if (changed) {
+        await _persist();
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   Map<String, dynamic> _toFirestore(WaterRecord r) => {
