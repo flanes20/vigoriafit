@@ -89,15 +89,20 @@ class TrainerService {
     if (!invite.exists) return null;
     final groupId = invite.data()!['groupId'] as String;
     final member = _groups.doc(groupId).collection('members').doc(userId);
-    await _db.runTransaction((tx) async {
-      if (!(await tx.get(member)).exists) {
-        tx.set(member, {
-          'name': userName,
-          'joinedAt': FieldValue.serverTimestamp(),
-          'inviteCode': code.trim(),
-        });
-      }
-    });
+    try {
+      await _db.runTransaction((tx) async {
+        if (!(await tx.get(member)).exists) {
+          tx.set(member, {
+            'name': userName,
+            'joinedAt': FieldValue.serverTimestamp(),
+            'inviteCode': code.trim(),
+          });
+        }
+      });
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') return null;
+      rethrow;
+    }
     return groupId;
   }
 

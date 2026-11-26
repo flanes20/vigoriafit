@@ -151,7 +151,8 @@ service cloud.firestore {
           && text(request.resource.data.name,120) && request.resource.data.joinedAt == request.time
           && request.resource.data.inviteCode is string && request.resource.data.inviteCode.matches('^[0-9]{6}$')
           && exists(/databases/$(database)/documents/groups/$(gid))
-          && get(/databases/$(database)/documents/groupInvites/$(request.resource.data.inviteCode)).data.groupId == gid;
+          && get(/databases/$(database)/documents/groupInvites/$(request.resource.data.inviteCode)).data.groupId == gid
+          && get(/databases/$(database)/documents/groups/$(gid)).data.code == request.resource.data.inviteCode;
         allow update: if false;
         allow delete: if owner(uid) || groupOwner(gid);
       }
