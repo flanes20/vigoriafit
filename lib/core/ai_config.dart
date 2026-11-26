@@ -12,7 +12,7 @@
 /// Firebase AI Logic siempre está disponible cuando Firebase está inicializado
 /// y el servicio está habilitado en la consola.
 /// Pasos de configuración: docs/APP_CHECK_SETUP.md
-const String kGeminiModel = 'gemini-3.8-flash';
+const String kGeminiModel = 'gemini-3.5-flash-lite';
 
 /// true cuando Firebase AI Logic debe usarse como backend de IA.
 /// En esta arquitectura (Firebase AI Logic), siempre es true una vez que

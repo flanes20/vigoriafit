@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/profile.dart';
@@ -74,6 +75,7 @@ class CoachService {
     final context = _buildContext(AppStore.instance);
     final contextualPrompt = '$_systemPrompt\n\nDatos del usuario:\n$context';
 
+    final sw = Stopwatch()..start();
     try {
       final text = await _adapter.chat(
         contextualPrompt,
@@ -89,9 +91,13 @@ class CoachService {
 
       _history.add((role: 'user', text: userMessage));
       _history.add((role: 'model', text: text));
+      sw.stop();
+      debugPrint('[KPI_COACH] ${sw.elapsedMilliseconds}ms | OK');
 
       return CoachResponse(text: text, fromAi: true);
     } on AiException catch (e) {
+      sw.stop();
+      debugPrint('[KPI_COACH] ${sw.elapsedMilliseconds}ms | ERROR: ${e.kind.name} (${e.detail})');
       if (_disposed || _pendingRequestId != reqId) {
         return const CoachResponse(text: '', fromAi: false);
       }
@@ -106,7 +112,7 @@ class CoachService {
 
       // Para timeout, blocked, invalidResponse: devolvemos el error sin fallback
       return CoachResponse(
-        text: _errorMessage(e.kind),
+        text: _errorMessage(e.kind, e.detail),
         fromAi: false,
         error: e.kind,
       );
@@ -137,11 +143,13 @@ class CoachService {
     ].join('\n');
   }
 
-  static String _errorMessage(AiError kind) => switch (kind) {
-    AiError.timeout       => 'La IA tardó demasiado. Toca "Reintentar" o prueba más tarde.',
-    AiError.blocked       => 'No pude responder a esa consulta.',
+  static String _errorMessage(AiError kind, [String? detail]) => switch (kind) {
+    AiError.timeout         => 'La IA tardó demasiado. Toca "Reintentar" o prueba más tarde.',
+    AiError.blocked         => 'No pude responder a esa consulta.',
     AiError.invalidResponse => 'Respuesta inesperada. Intenta con otra pregunta.',
-    _                     => 'Error inesperado. Intenta de nuevo.',
+    _                       => detail != null && detail.isNotEmpty
+        ? 'Error inesperado ($detail). Intenta de nuevo.'
+        : 'Error inesperado. Intenta de nuevo.',
   };
 
   static String errorLabel(AiError? kind) => switch (kind) {
