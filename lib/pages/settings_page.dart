@@ -646,6 +646,20 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  bool _use24HourFormat = true;
+
+  String _formatTime(TimeOfDay t) {
+    if (_use24HourFormat) {
+      final hh = t.hour.toString().padLeft(2, '0');
+      final mm = t.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    }
+    final period = t.hour >= 12 ? 'PM' : 'AM';
+    final h12 = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+    final mm = t.minute.toString().padLeft(2, '0');
+    return '$h12:$mm $period';
+  }
+
   Widget _reminders() {
     return ListenableBuilder(
       listenable: AppStore.instance,
@@ -673,7 +687,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 subtitle: Text(
-                  'Todos los días a las ${time.format(context)} · toca para cambiar la hora',
+                  'Todos los días a las ${_formatTime(time)} · toca para cambiar la hora',
                   style: TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
                 onChanged: (v) async {
@@ -696,27 +710,43 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: time,
-                  );
-                  if (picked != null) {
-                    // Mantiene el estado activado/desactivado actual: solo
-                    // cambia la hora, no fuerza a encender el recordatorio.
-                    await s.setWorkoutReminder(
-                      s.workoutReminderOn,
-                      hour: picked.hour,
-                      minute: picked.minute,
-                    );
-                  }
-                },
-                icon: const Icon(Icons.schedule_rounded, size: 16),
-                label: const Text('Cambiar hora'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.brand),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment<bool>(value: false, label: Text('12h')),
+                      ButtonSegment<bool>(value: true, label: Text('24h')),
+                    ],
+                    selected: {_use24HourFormat},
+                    onSelectionChanged: (sel) {
+                      setState(() => _use24HourFormat = sel.first);
+                    },
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () async {
+                      final picked = await _pickTimeCustom(context, time);
+                      if (picked != null) {
+                        // Mantiene el estado activado/desactivado actual: solo
+                        // cambia la hora, no fuerza a encender el recordatorio.
+                        await s.setWorkoutReminder(
+                          s.workoutReminderOn,
+                          hour: picked.hour,
+                          minute: picked.minute,
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.schedule_rounded, size: 16),
+                    label: const Text('Cambiar hora'),
+                    style: TextButton.styleFrom(foregroundColor: AppColors.brand),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -739,7 +769,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 subtitle: Text(
-                  '3 avisos al día (11:00, 15:30, 19:00)',
+                  '${s.waterTimes.length} ${s.waterTimes.length == 1 ? 'aviso' : 'avisos'} al día (${s.waterTimes.map(_formatTime).join(', ')})',
                   style: TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
                 onChanged: (v) async {
@@ -760,6 +790,103 @@ class _SettingsPageState extends State<SettingsPage> {
                   }
                   await s.setWaterReminder(v);
                 },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Alarmas de agua al día',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: s.waterTimes.length > 1
+                            ? () async {
+                                final next = List<TimeOfDay>.of(s.waterTimes)
+                                  ..removeLast();
+                                await s.setWaterReminder(
+                                  s.waterReminderOn,
+                                  times: next,
+                                );
+                              }
+                            : null,
+                        icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      Text(
+                        '${s.waterTimes.length}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.brand,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: s.waterTimes.length < 6
+                            ? () async {
+                                final last = s.waterTimes.last;
+                                final nextHour = (last.hour + 2) % 24;
+                                final next = List<TimeOfDay>.of(s.waterTimes)
+                                  ..add(TimeOfDay(hour: nextHour, minute: last.minute));
+                                await s.setWaterReminder(
+                                  s.waterReminderOn,
+                                  times: next,
+                                );
+                              }
+                            : null,
+                        icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(s.waterTimes.length, (i) {
+                      final wt = s.waterTimes[i];
+                      return ActionChip(
+                        avatar: const Icon(Icons.water_drop_rounded, size: 15, color: AppColors.water),
+                        label: Text(
+                          _formatTime(wt),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                        backgroundColor: AppColors.surfaceAlt,
+                        side: BorderSide(color: AppColors.line),
+                        onPressed: () async {
+                          final picked = await _pickTimeCustom(context, wt);
+                          if (picked != null) {
+                            final next = List<TimeOfDay>.of(s.waterTimes);
+                            next[i] = picked;
+                            await s.setWaterReminder(
+                              s.waterReminderOn,
+                              times: next,
+                            );
+                          }
+                        },
+                      );
+                    }),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1008,6 +1135,24 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Future<TimeOfDay?> _pickTimeCustom(BuildContext context, TimeOfDay initial) {
+    return showModalBottomSheet<TimeOfDay>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) => _TimePickerSheet(
+        initialTime: initial,
+        initial24h: _use24HourFormat,
+        onFormatChanged: (v) {
+          if (mounted) setState(() => _use24HourFormat = v);
+        },
+      ),
+    );
+  }
+
   Widget _label(String t) => Text(
     t,
     style: TextStyle(
@@ -1025,4 +1170,293 @@ class _SettingsPageState extends State<SettingsPage> {
       color: AppColors.muted,
     ),
   );
+}
+
+class _TimePickerSheet extends StatefulWidget {
+  const _TimePickerSheet({
+    required this.initialTime,
+    required this.initial24h,
+    required this.onFormatChanged,
+  });
+
+  final TimeOfDay initialTime;
+  final bool initial24h;
+  final ValueChanged<bool> onFormatChanged;
+
+  @override
+  State<_TimePickerSheet> createState() => _TimePickerSheetState();
+}
+
+class _TimePickerSheetState extends State<_TimePickerSheet> {
+  late bool _is24h;
+  late int _hour24;
+  late int _minute;
+  late final TextEditingController _hourCtrl;
+  late final TextEditingController _minCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _is24h = widget.initial24h;
+    _hour24 = widget.initialTime.hour;
+    _minute = widget.initialTime.minute;
+    _hourCtrl = TextEditingController();
+    _minCtrl = TextEditingController();
+    _syncControllers();
+  }
+
+  void _syncControllers() {
+    final displayHour = _is24h
+        ? _hour24
+        : (_hour24 % 12 == 0 ? 12 : _hour24 % 12);
+    _hourCtrl.text = displayHour.toString().padLeft(2, '0');
+    _minCtrl.text = _minute.toString().padLeft(2, '0');
+  }
+
+  @override
+  void dispose() {
+    _hourCtrl.dispose();
+    _minCtrl.dispose();
+    super.dispose();
+  }
+
+  bool get _isPm => _hour24 >= 12;
+
+  void _setAmPm(bool pm) {
+    setState(() {
+      if (pm && _hour24 < 12) _hour24 += 12;
+      if (!pm && _hour24 >= 12) _hour24 -= 12;
+      _syncControllers();
+    });
+  }
+
+  void _stepHour(int delta) {
+    setState(() {
+      _hour24 = (_hour24 + delta) % 24;
+      if (_hour24 < 0) _hour24 += 24;
+      _syncControllers();
+    });
+  }
+
+  void _stepMinute(int delta) {
+    setState(() {
+      _minute = (_minute + delta) % 60;
+      if (_minute < 0) _minute += 60;
+      _syncControllers();
+    });
+  }
+
+  void _applyTyped() {
+    final hRaw = int.tryParse(_hourCtrl.text.trim());
+    final mRaw = int.tryParse(_minCtrl.text.trim());
+    if (hRaw != null) {
+      if (_is24h) {
+        _hour24 = hRaw.clamp(0, 23);
+      } else {
+        final h12 = hRaw.clamp(1, 12);
+        if (_isPm) {
+          _hour24 = h12 == 12 ? 12 : h12 + 12;
+        } else {
+          _hour24 = h12 == 12 ? 0 : h12;
+        }
+      }
+    }
+    if (mRaw != null) {
+      _minute = mRaw.clamp(0, 59);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + bottomInset),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.line,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Text(
+                'Seleccionar hora',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.ink,
+                ),
+              ),
+              const Spacer(),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment<bool>(value: false, label: Text('12h')),
+                  ButtonSegment<bool>(value: true, label: Text('24h')),
+                ],
+                selected: {_is24h},
+                onSelectionChanged: (sel) {
+                  _applyTyped();
+                  setState(() {
+                    _is24h = sel.first;
+                    _syncControllers();
+                  });
+                  widget.onFormatChanged(_is24h);
+                },
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _numberColumn(
+                label: _is24h ? 'Hora (00-23)' : 'Hora (01-12)',
+                controller: _hourCtrl,
+                onUp: () => _stepHour(1),
+                onDown: () => _stepHour(-1),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  ':',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              _numberColumn(
+                label: 'Min (00-59)',
+                controller: _minCtrl,
+                onUp: () => _stepMinute(1),
+                onDown: () => _stepMinute(-1),
+              ),
+              if (!_is24h) ...[
+                const SizedBox(width: 14),
+                Column(
+                  children: [
+                    _amPmBtn('AM', !_isPm, () => _setAmPm(false)),
+                    const SizedBox(height: 6),
+                    _amPmBtn('PM', _isPm, () => _setAmPm(true)),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              _applyTyped();
+              Navigator.pop(
+                context,
+                TimeOfDay(hour: _hour24, minute: _minute),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.brand,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: const Text(
+              'Confirmar hora',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _numberColumn({
+    required String label,
+    required TextEditingController controller,
+    required VoidCallback onUp,
+    required VoidCallback onDown,
+  }) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: AppColors.muted, fontWeight: FontWeight.w600),
+        ),
+        IconButton(
+          onPressed: onUp,
+          icon: Icon(Icons.keyboard_arrow_up_rounded, color: AppColors.ink),
+          visualDensity: VisualDensity.compact,
+        ),
+        SizedBox(
+          width: 72,
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppColors.ink,
+            ),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: AppColors.surfaceAlt,
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.line),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.line),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: onDown,
+          icon: Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.ink),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
+  }
+
+  Widget _amPmBtn(String text, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 52,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? AppColors.brand : AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: active ? AppColors.brand : AppColors.line),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: active ? Colors.white : AppColors.ink,
+          ),
+        ),
+      ),
+    );
+  }
 }

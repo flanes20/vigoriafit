@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -14,9 +15,8 @@ class Notifications {
 
   // IDs fijos por tipo de recordatorio (permiten cancelar/reprogramar cada uno).
   static const _idWorkout = 100;
-  static const _idWater1 = 201;
-  static const _idWater2 = 202;
-  static const _idWater3 = 203;
+  static const _idWaterBase = 201;
+  static const _maxWaterAlarms = 6;
   static const _idRestTimer = 300;
 
   static Future<void> init() async {
@@ -41,12 +41,13 @@ class Notifications {
     _ready = true;
   }
 
-  /// Pide permiso de notificaciones (Android 13+). Devuelve true si se otorgó.
+  /// Pide permiso de notificaciones (Android 13+) y alarmas exactas. Devuelve true si se otorgó.
   static Future<bool> requestPermission() async {
     await init();
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     final granted = await android?.requestNotificationsPermission();
+    await android?.requestExactAlarmsPermission();
     return granted ?? true;
   }
 
@@ -58,29 +59,46 @@ class Notifications {
     required String body,
   }) async {
     await init();
-    final now = tz.TZDateTime.now(tz.local);
-    var when = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
-    if (when.isBefore(now)) when = when.add(const Duration(days: 1));
+    final sysNow = DateTime.now();
+    var target = DateTime(sysNow.year, sysNow.month, sysNow.day, hour, minute);
+    if (!target.isAfter(sysNow)) target = target.add(const Duration(days: 1));
+    final when = tz.TZDateTime.now(tz.local).add(target.difference(sysNow));
 
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      when,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'brio_reminders',
-          'Recordatorios de VigoriaFit',
-          channelDescription: 'Avisos para entrenar y tomar agua',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'brio_reminders',
+        'Recordatorios de VigoriaFit',
+        channelDescription: 'Avisos para entrenar y tomar agua',
+        importance: Importance.high,
+        priority: Priority.high,
       ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // se repite cada día
     );
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time, // se repite cada día
+      );
+    } catch (_) {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    }
   }
 
   /// Programa el recordatorio diario de entrenar a la hora indicada.
@@ -94,32 +112,25 @@ class Notifications {
 
   static Future<void> cancelWorkout() => _plugin.cancel(_idWorkout);
 
-  /// Programa 3 recordatorios de agua repartidos en el día (mañana, tarde, noche).
-  static Future<void> scheduleWater() async {
-    await _scheduleDaily(
-        id: _idWater1,
-        hour: 11,
-        minute: 0,
+  /// Programa los recordatorios diarios de agua según la lista de horarios configurada (máx. 6).
+  static Future<void> scheduleWater(List<TimeOfDay> times) async {
+    final count = times.length.clamp(0, _maxWaterAlarms);
+    for (int i = 0; i < count; i++) {
+      final t = times[i];
+      await _scheduleDaily(
+        id: _idWaterBase + i,
+        hour: t.hour,
+        minute: t.minute,
         title: '💧 Toma agua',
-        body: 'Un vaso de agua ahora te ayuda a rendir mejor.');
-    await _scheduleDaily(
-        id: _idWater2,
-        hour: 15,
-        minute: 30,
-        title: '💧 Toma agua',
-        body: '¿Cómo vas con tu meta de agua hoy?');
-    await _scheduleDaily(
-        id: _idWater3,
-        hour: 19,
-        minute: 0,
-        title: '💧 Toma agua',
-        body: 'Última pasada del día: hidrátate.');
+        body: 'Recuerda hidratarte para cumplir tu meta diaria.',
+      );
+    }
   }
 
   static Future<void> cancelWater() async {
-    await _plugin.cancel(_idWater1);
-    await _plugin.cancel(_idWater2);
-    await _plugin.cancel(_idWater3);
+    for (int i = 0; i < _maxWaterAlarms; i++) {
+      await _plugin.cancel(_idWaterBase + i);
+    }
   }
 
   /// Muestra notificación inmediata cuando se completa el descanso

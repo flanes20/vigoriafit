@@ -176,3 +176,15 @@
 | `lib/services/store.dart` | Añadida persistencia local por usuario para metas calóricas por horario (`brio_meal_budgets_v1`), `mealKcalGoal(MealType)` con cálculo proporcional por defecto (`25% / 35% / 30% / 10%`) y `saveMealKcalBudgets()`. |
 | `lib/pages/nutrition_page.dart` | Añadido botón explícito de eliminación con confirmación en `_foodRecordTile`. Añadida tarjeta `_mealDistributionCard` con barras de kcal (y sobreconsumo) para Desayuno, Almuerzo, Cena y Snack y agrupación visual de registros por horario. Añadido slide `⚖️ Dividir calorías` (`_buildMealDivisionSlide`) dentro de `_FoodLogSheet` con sliders ajustables por horario y barra proyectada del horario en `_nutrientPreview`. |
 
+---
+
+## Cambios de código — 25 noviembre 2026 (commit `feat(S5-16): notificaciones exactas, selector 12h/24h y alarmas de agua configurables`)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `lib/services/notifications.dart` | Programación con `AndroidScheduleMode.exactAllowWhileIdle` (solicitando `requestExactAlarmsPermission()` en Android 13+) y cálculo de `when` basado en `DateTime.now()` para evitar desfases horarios. Soporte dinámico de `scheduleWater(List<TimeOfDay>)` y `cancelWater()` para hasta 6 alarmas diarias. |
+| `lib/services/store.dart` | Persistencia local de horarios de agua (`brio_water_times_v1`), `waterTimes` y `setWaterReminder(on, {times})`. |
+| `lib/pages/settings_page.dart` | Implementado selector propio `_TimePickerSheet` con modo `12h` (`01-12` + `AM/PM`) y `24h` (`00-23`) y configuración de cantidad (`1` a `6`) y horarios individuales para las alarmas de agua. |
+

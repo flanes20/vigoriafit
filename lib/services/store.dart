@@ -102,6 +102,7 @@ class AppStore extends ChangeNotifier {
   static const _kWorkoutHour = 'brio_reminder_workout_hour_v1';
   static const _kWorkoutMinute = 'brio_reminder_workout_min_v1';
   static const _kWaterReminder = 'brio_reminder_water_v1';
+  static const _kWaterTimes = 'brio_water_times_v1';
   static const _kWeekPlan = 'brio_weekplan_v1';
   static const _kExerciseWeights = 'brio_exercise_weights_v1';
   static const _kGroupId = 'brio_group_id_v1';
@@ -120,6 +121,12 @@ class AppStore extends ChangeNotifier {
   int _workoutHour = 18;
   int _workoutMinute = 0;
   bool _waterReminderOn = false;
+  static const List<TimeOfDay> _defaultWaterTimes = [
+    TimeOfDay(hour: 11, minute: 0),
+    TimeOfDay(hour: 15, minute: 30),
+    TimeOfDay(hour: 19, minute: 0),
+  ];
+  List<TimeOfDay> _waterTimes = List.of(_defaultWaterTimes);
   WeekPlan? _weekPlan;
   final Map<String, List<ExerciseWeightEntry>> _exerciseWeights = {};
   String _localUserId = '';
@@ -143,6 +150,7 @@ class AppStore extends ChangeNotifier {
   int get workoutHour => _workoutHour;
   int get workoutMinute => _workoutMinute;
   bool get waterReminderOn => _waterReminderOn;
+  List<TimeOfDay> get waterTimes => List.unmodifiable(_waterTimes);
   WeekPlan? get weekPlan => _weekPlan;
 
   // ── Rol entrenador / grupos ──────────────────────────────────────────────
@@ -189,6 +197,7 @@ class AppStore extends ChangeNotifier {
     _localUserId = user?.uid ?? '';
     _workoutReminderOn = false;
     _waterReminderOn = false;
+    _waterTimes = List.of(_defaultWaterTimes);
     _workoutHour = 18;
     _workoutMinute = 0;
     _loaded = false;
@@ -308,6 +317,23 @@ class AppStore extends ChangeNotifier {
     _workoutHour = p.getInt(_kWorkoutHour) ?? 18;
     _workoutMinute = p.getInt(_kWorkoutMinute) ?? 0;
     _waterReminderOn = p.getBool(_kWaterReminder) ?? false;
+    final rawWaterTimes = p.getStringList(_kWaterTimes);
+    if (rawWaterTimes != null && rawWaterTimes.isNotEmpty) {
+      final parsed = <TimeOfDay>[];
+      for (final s in rawWaterTimes) {
+        final parts = s.split(':');
+        if (parts.length == 2) {
+          final h = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          if (h != null && m != null && h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+            parsed.add(TimeOfDay(hour: h, minute: m));
+          }
+        }
+      }
+      _waterTimes = parsed.isNotEmpty ? parsed : List.of(_defaultWaterTimes);
+    } else {
+      _waterTimes = List.of(_defaultWaterTimes);
+    }
     final wpj = p.getString(_kWeekPlan);
     _weekPlan = wpj != null ? WeekPlan.fromJson(wpj) : null;
     final ewj = p.getString(_kExerciseWeights);
@@ -465,6 +491,7 @@ class AppStore extends ChangeNotifier {
     final water = !cancelOnly && _waterReminderOn;
     final hour = _workoutHour;
     final minute = _workoutMinute;
+    final wTimes = List<TimeOfDay>.of(_waterTimes);
     // Serialize platform calls: a previous account cannot schedule after logout.
     return _reminderTransition = _reminderTransition.catchError((_) {}).then((
       _,
@@ -474,7 +501,7 @@ class AppStore extends ChangeNotifier {
       if (epoch != _epoch) return;
       if (workout) await Notifications.scheduleWorkout(hour, minute);
       if (epoch != _epoch) return;
-      if (water) await Notifications.scheduleWater();
+      if (water) await Notifications.scheduleWater(wTimes);
     });
   }
 
@@ -494,11 +521,20 @@ class AppStore extends ChangeNotifier {
     if (epoch == _epoch) await _updateReminders();
   }
 
-  Future<void> setWaterReminder(bool on) async {
+  Future<void> setWaterReminder(bool on, {List<TimeOfDay>? times}) async {
     final epoch = _epoch;
     _waterReminderOn = on;
+    if (times != null && times.isNotEmpty) {
+      _waterTimes = List.of(times.take(6));
+    }
+    final savedTimes = _waterTimes
+        .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+        .toList();
     notifyListeners();
-    await _prefs((p) => p.setBool(_kWaterReminder, on));
+    await _prefs((p) async {
+      await p.setBool(_kWaterReminder, on);
+      await p.setStringList(_kWaterTimes, savedTimes);
+    });
     if (epoch == _epoch) await _updateReminders();
   }
 
